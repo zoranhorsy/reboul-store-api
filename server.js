@@ -76,35 +76,36 @@ app.get('/api', (req, res) => {
 // Middleware de gestion des erreurs
 app.use(errorHandler);
 
-// À la fin du fichier, avant les écouteurs de port
-module.exports = { app };
+// Configuration SMTP
+const smtpConfig = {
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    secure: false,
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASSWORD
+    }
+};
+console.log('Configuration SMTP:', smtpConfig);
 
-// Fonction pour démarrer le serveur
-const startServer = (port) => {
-    app.listen(port, () => {
-        console.log(`Serveur démarré sur le port ${port}`);
-    }).on('error', (err) => {
-        if (err.code === 'EADDRINUSE') {
-            console.log(`Le port ${port} est déjà utilisé. Tentative avec le port ${port + 1}`);
-            startServer(port + 1);
-        } else {
-            console.error('Erreur lors du démarrage du serveur:', err);
-        }
-    });
+// Démarrage du serveur
+const PORT = process.env.PORT || 5001;
+
+const startServer = async () => {
+    try {
+        // Initialiser la connexion à la base de données
+        await pool.initialize();
+        console.log('Base de données initialisée avec succès');
+
+        // Démarrer le serveur
+        app.listen(PORT, () => {
+            console.log(`Serveur démarré sur le port ${PORT}`);
+        });
+    } catch (error) {
+        console.error('Erreur lors du démarrage du serveur:', error);
+        process.exit(1);
+    }
 };
 
-// Ne démarrer le serveur que si nous ne sommes pas en mode test
-if (process.env.NODE_ENV !== 'test') {
-    // Vérification de la connexion à la base de données avant de démarrer le serveur
-    pool.query('SELECT NOW()', (err) => {
-        if (err) {
-            console.error('Erreur de connexion à la base de données:', err);
-            process.exit(1);
-        } else {
-            console.log('Connexion à la base de données réussie');
-            const PORT = process.env.PORT || 5001;
-            startServer(PORT);
-        }
-    });
-}
+startServer();
 
