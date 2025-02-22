@@ -19,23 +19,41 @@ if (!fs.existsSync(uploadsDir)){
     console.log('Dossier uploads existant:', uploadsDir);
 }
 
-// Configuration CORS
+// Configuration CORS améliorée
 const corsOptions = {
-    origin: process.env.NODE_ENV === 'production' 
-        ? ['https://reboul-store.vercel.app', 'https://www.reboul-store.vercel.app']
-        : '*',
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    origin: function(origin, callback) {
+        const allowedOrigins = [
+            'https://reboulreactversion0.vercel.app',
+            'https://reboulreactversion0-oy703bs4d-horsys-projects.vercel.app',
+            'https://reboul-store.vercel.app',
+            'http://localhost:3000'
+        ];
+        
+        // Permettre les requêtes sans origine (comme Postman)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.log('Origine bloquée:', origin);
+            callback(new Error('Non autorisé par CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
+    credentials: true,
+    optionsSuccessStatus: 200,
+    maxAge: 3600 // Cache préflight pendant 1 heure
 };
 
 // Middleware
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Ajout du middleware de logging
+// Logging middleware
 app.use((req, res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    console.log('Origin:', req.headers.origin);
     next();
 });
 
@@ -45,9 +63,15 @@ app.use('/uploads', (req, res, next) => {
     next();
 });
 
-// Servir les fichiers statiques
-app.use('/api/uploads', express.static(path.join(__dirname, 'public', 'uploads')));
-app.use('/api/archives', express.static(path.join(__dirname, 'public', 'archives')));
+// Servir les fichiers statiques avec cache-control
+app.use('/api/uploads', express.static(path.join(__dirname, 'public', 'uploads'), {
+    maxAge: '1h',
+    etag: true
+}));
+app.use('/api/archives', express.static(path.join(__dirname, 'public', 'archives'), {
+    maxAge: '1h',
+    etag: true
+}));
 
 // Routes
 const categoriesRouter = require('./routes/categories');
@@ -80,18 +104,26 @@ app.get('/api', (req, res) => {
     res.json({ message: 'Bienvenue sur l\'API de Reboul Store' });
 });
 
+// Configuration SMTP pour Gmail
+const smtpConfig = {
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: false,
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASSWORD
+    },
+    tls: {
+        rejectUnauthorized: false
+    }
+};
+
+// Créer le transporteur SMTP
+const transporter = nodemailer.createTransport(smtpConfig);
+
 // Route de test pour l'email
 app.post('/api/test-email', async (req, res) => {
     try {
-        // Log des variables d'environnement (en masquant les valeurs sensibles)
-        console.log('Variables d\'environnement SMTP:', {
-            SMTP_HOST: process.env.SMTP_HOST,
-            SMTP_PORT: process.env.SMTP_PORT,
-            SMTP_USER: process.env.SMTP_USER,
-            SMTP_PASSWORD: process.env.SMTP_PASSWORD ? '***' : 'non défini'
-        });
-
-        // Tester l'envoi d'email
         const info = await transporter.sendMail({
             from: process.env.SMTP_USER,
             to: req.body.to || process.env.SMTP_USER,
@@ -120,50 +152,6 @@ app.post('/api/test-email', async (req, res) => {
 // Middleware de gestion des erreurs
 app.use(errorHandler);
 
-// Configuration SMTP pour Gmail
-const smtpConfig = {
-    host: process.env.SMTP_HOST || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: false, // true pour 465, false pour 587
-    auth: {
-        user: process.env.SMTP_USER || 'horsydevservices@gmail.com',
-        pass: process.env.SMTP_PASSWORD // Doit être un mot de passe d'application Gmail
-    },
-    tls: {
-        rejectUnauthorized: false // Nécessaire en production
-    }
-};
-
-// Log de la configuration SMTP (en masquant le mot de passe)
-console.log('Configuration SMTP:', {
-    ...smtpConfig,
-    auth: {
-        ...smtpConfig.auth,
-        pass: '***'
-    }
-});
-
-// Créer le transporteur SMTP
-const transporter = nodemailer.createTransport(smtpConfig);
-
-// Vérifier la connexion SMTP
-transporter.verify(function(error, success) {
-    if (error) {
-        console.error('Erreur de configuration SMTP:', error);
-        console.error('Détails de l\'erreur:', {
-            code: error.code,
-            command: error.command,
-            response: error.response,
-            responseCode: error.responseCode
-        });
-    } else {
-        console.log('Serveur SMTP prêt à envoyer des emails');
-    }
-});
-
-// Rendre le transporteur disponible globalement
-app.set('emailTransporter', transporter);
-
 // Démarrage du serveur
 const PORT = process.env.PORT || 5001;
 
@@ -176,7 +164,21 @@ db.pool.query('SELECT NOW()', (err) => {
         console.log('Connexion à la base de données réussie');
         app.listen(PORT, () => {
             console.log(`Serveur démarré sur le port ${PORT}`);
+            console.log('Configuration CORS:', {
+                origins: corsOptions.origin,
+                methods: corsOptions.methods
+            });
         });
     }
+});
+
+// Gestion des erreurs non capturées
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    process.exit(1);
 });
 
