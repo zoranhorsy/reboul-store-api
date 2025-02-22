@@ -106,49 +106,51 @@ const staticOptions = {
     }
 };
 
-// Configuration des chemins statiques avec gestion d'erreur
-const serveStaticSafely = (route, directory) => {
-    app.use(route, (req, res, next) => {
-        // Log pour debugging
-        console.log(`Accès au fichier statique: ${req.path} depuis ${route}`);
-        
-        // Vérifier si le fichier existe
-        const filePath = path.join(directory, req.path);
-        if (fs.existsSync(filePath)) {
-            console.log(`Fichier trouvé: ${filePath}`);
+// Servir les fichiers statiques directement
+app.use(express.static(path.join(__dirname, 'public'), staticOptions));
+
+// Route spécifique pour les images des marques
+app.get('/brands/:brand/:image', (req, res) => {
+    const { brand, image } = req.params;
+    console.log(`Demande d'image de marque: ${brand}/${image}`);
+    
+    const imagePath = path.join(__dirname, 'public', 'brands', brand, image);
+    console.log('Chemin complet:', imagePath);
+    
+    if (fs.existsSync(imagePath)) {
+        console.log('Image trouvée, envoi...');
+        res.sendFile(imagePath);
+    } else {
+        console.log('Image non trouvée, envoi du placeholder...');
+        const placeholderPath = path.join(__dirname, 'public', 'placeholder.png');
+        if (fs.existsSync(placeholderPath)) {
+            res.sendFile(placeholderPath);
         } else {
-            console.log(`Fichier non trouvé: ${filePath}`);
+            res.status(404).send('Image non trouvée');
         }
+    }
+});
 
-        express.static(directory, staticOptions)(req, res, err => {
-            if (err) {
-                console.error(`Erreur lors de la lecture du fichier statique ${req.path}:`, err);
-                // Si le fichier n'existe pas, renvoyer une image par défaut
-                if (err.code === 'ENOENT') {
-                    const placeholderPath = path.join(__dirname, 'public', 'placeholder.png');
-                    if (fs.existsSync(placeholderPath)) {
-                        res.sendFile(placeholderPath);
-                    } else {
-                        res.status(404).send('Image non trouvée');
-                    }
-                } else {
-                    res.status(500).send('Erreur lors de la lecture du fichier');
-                }
-            } else {
-                next();
-            }
-        });
-    });
-};
-
-// Application des routes statiques avec la nouvelle fonction sécurisée
-serveStaticSafely('/', path.join(__dirname, 'public'));
-serveStaticSafely('/api/uploads', path.join(__dirname, 'public', 'uploads'));
-serveStaticSafely('/api/archives', path.join(__dirname, 'public', 'archives'));
-serveStaticSafely('/api/brands', path.join(__dirname, 'public', 'brands'));
-serveStaticSafely('/uploads', path.join(__dirname, 'public', 'uploads'));
-serveStaticSafely('/archives', path.join(__dirname, 'public', 'archives'));
-serveStaticSafely('/brands', path.join(__dirname, 'public', 'brands'));
+// Route de test pour vérifier les chemins
+app.get('/check-paths', (req, res) => {
+    const paths = {
+        publicDir: {
+            path: publicDir,
+            exists: fs.existsSync(publicDir),
+            isDirectory: fs.existsSync(publicDir) ? fs.statSync(publicDir).isDirectory() : false,
+            readable: fs.existsSync(publicDir) ? fs.accessSync(publicDir, fs.constants.R_OK) : false
+        },
+        brandsDir: {
+            path: brandsDir,
+            exists: fs.existsSync(brandsDir),
+            isDirectory: fs.existsSync(brandsDir) ? fs.statSync(brandsDir).isDirectory() : false,
+            readable: fs.existsSync(brandsDir) ? fs.accessSync(brandsDir, fs.constants.R_OK) : false,
+            contents: fs.existsSync(brandsDir) ? fs.readdirSync(brandsDir) : []
+        }
+    };
+    
+    res.json(paths);
+});
 
 // Routes
 const categoriesRouter = require('./routes/categories');
