@@ -109,17 +109,28 @@ const staticOptions = {
 // Configuration des chemins statiques avec gestion d'erreur
 const serveStaticSafely = (route, directory) => {
     app.use(route, (req, res, next) => {
+        // Log pour debugging
+        console.log(`Accès au fichier statique: ${req.path} depuis ${route}`);
+        
+        // Vérifier si le fichier existe
+        const filePath = path.join(directory, req.path);
+        if (fs.existsSync(filePath)) {
+            console.log(`Fichier trouvé: ${filePath}`);
+        } else {
+            console.log(`Fichier non trouvé: ${filePath}`);
+        }
+
         express.static(directory, staticOptions)(req, res, err => {
             if (err) {
                 console.error(`Erreur lors de la lecture du fichier statique ${req.path}:`, err);
                 // Si le fichier n'existe pas, renvoyer une image par défaut
                 if (err.code === 'ENOENT') {
-                    res.sendFile(path.join(__dirname, 'public', 'placeholder.png'), err => {
-                        if (err) {
-                            console.error('Erreur lors de l\'envoi du placeholder:', err);
-                            res.status(404).send('Image non trouvée');
-                        }
-                    });
+                    const placeholderPath = path.join(__dirname, 'public', 'placeholder.png');
+                    if (fs.existsSync(placeholderPath)) {
+                        res.sendFile(placeholderPath);
+                    } else {
+                        res.status(404).send('Image non trouvée');
+                    }
                 } else {
                     res.status(500).send('Erreur lors de la lecture du fichier');
                 }
@@ -131,12 +142,13 @@ const serveStaticSafely = (route, directory) => {
 };
 
 // Application des routes statiques avec la nouvelle fonction sécurisée
-serveStaticSafely('/api/uploads', uploadsDir);
-serveStaticSafely('/api/archives', archivesDir);
-serveStaticSafely('/api/brands', brandsDir);
-serveStaticSafely('/uploads', uploadsDir);
-serveStaticSafely('/archives', archivesDir);
-serveStaticSafely('/brands', brandsDir);
+serveStaticSafely('/', path.join(__dirname, 'public'));
+serveStaticSafely('/api/uploads', path.join(__dirname, 'public', 'uploads'));
+serveStaticSafely('/api/archives', path.join(__dirname, 'public', 'archives'));
+serveStaticSafely('/api/brands', path.join(__dirname, 'public', 'brands'));
+serveStaticSafely('/uploads', path.join(__dirname, 'public', 'uploads'));
+serveStaticSafely('/archives', path.join(__dirname, 'public', 'archives'));
+serveStaticSafely('/brands', path.join(__dirname, 'public', 'brands'));
 
 // Routes
 const categoriesRouter = require('./routes/categories');
