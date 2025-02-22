@@ -3,13 +3,14 @@ require('dotenv').config();
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL || "postgresql://postgres:wuRWzXkTzKjXDFradojRvRtTDiSuOXos@nozomi.proxy.rlwy.net:14067/railway",
-    ssl: {
-        rejectUnauthorized: false
-    },
     // Options de connexion
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
-    max: 20
+    max: 20,
+    // Désactiver SSL si non supporté
+    ssl: process.env.NODE_ENV === 'production' ? {
+        rejectUnauthorized: false
+    } : false
 });
 
 // Test de connexion initial
