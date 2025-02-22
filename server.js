@@ -192,16 +192,59 @@ app.get('/brands/:brand/:image', (req, res) => {
     const imagePath = path.join(__dirname, 'public', 'brands', brand, image);
     console.log('Chemin complet:', imagePath);
     
+    // Vérifier si le dossier de la marque existe
+    const brandDir = path.join(__dirname, 'public', 'brands', brand);
+    if (!fs.existsSync(brandDir)) {
+        console.log(`Dossier de marque non trouvé: ${brandDir}`);
+        console.log('Dossiers disponibles:', fs.readdirSync(path.join(__dirname, 'public', 'brands')));
+        return res.status(404).json({ 
+            error: 'Brand directory not found',
+            brandDir,
+            availableBrands: fs.readdirSync(path.join(__dirname, 'public', 'brands'))
+        });
+    }
+
+    // Vérifier si l'image existe
     if (fs.existsSync(imagePath)) {
         console.log('Image trouvée, envoi...');
-        res.sendFile(imagePath);
+        // Vérifier les permissions
+        try {
+            fs.accessSync(imagePath, fs.constants.R_OK);
+            // Définir les headers appropriés
+            res.setHeader('Content-Type', `image/${path.extname(imagePath).slice(1)}`);
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            // Envoyer le fichier
+            res.sendFile(imagePath);
+        } catch (error) {
+            console.error('Erreur d\'accès au fichier:', error);
+            res.status(500).json({ 
+                error: 'File access error',
+                details: error.message,
+                path: imagePath
+            });
+        }
     } else {
-        console.log('Image non trouvée, envoi du placeholder...');
+        console.log('Image non trouvée, recherche du placeholder...');
+        // Lister les fichiers disponibles dans le dossier de la marque
+        const availableFiles = fs.readdirSync(brandDir);
+        console.log('Fichiers disponibles dans le dossier:', availableFiles);
+        
         const placeholderPath = path.join(__dirname, 'public', 'placeholder.png');
         if (fs.existsSync(placeholderPath)) {
+            console.log('Envoi du placeholder...');
+            res.setHeader('Content-Type', 'image/png');
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+            res.setHeader('Access-Control-Allow-Origin', '*');
             res.sendFile(placeholderPath);
         } else {
-            res.status(404).send('Image non trouvée');
+            console.log('Placeholder non trouvé');
+            res.status(404).json({
+                error: 'Image and placeholder not found',
+                requestedPath: imagePath,
+                placeholderPath: placeholderPath,
+                availableFiles: availableFiles
+            });
         }
     }
 });
