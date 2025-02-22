@@ -8,10 +8,14 @@ types.setTypeParser(20, function(val) {
 });
 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    // Force IPv4
-    family: 4
+    user: 'postgres',
+    password: 'DTDgjwuEWk0o3Iis',
+    host: 'db.imshohofssmnexditciw.supabase.co',
+    port: 5432,
+    database: 'postgres',
+    ssl: {
+        rejectUnauthorized: false
+    }
 });
 
 pool.on('error', (err) => {
