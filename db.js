@@ -11,54 +11,50 @@ const config = {
     ssl: {
         rejectUnauthorized: false
     },
-    // Options supplémentaires pour la résolution DNS
-    options: '-c search_path=public',
-    keepAlive: true,
-    keepAliveInitialDelayMillis: 10000
+    // Configuration du pool
+    max: 20, // maximum de connexions dans le pool
+    idleTimeoutMillis: 30000, // temps maximum d'inactivité d'une connexion
+    connectionTimeoutMillis: 10000, // temps maximum pour établir une connexion
 };
 
-// Création du pool avec retry
-const createPool = async () => {
+// Fonction pour tenter une connexion avec retry
+const connectWithRetry = async (retries = 5, delay = 5000) => {
     const pool = new Pool(config);
-    
-    try {
-        // Test de connexion
-        await pool.query('SELECT NOW()');
-        console.log('Connexion à la base de données réussie');
-        return pool;
-    } catch (err) {
-        console.error('Erreur de connexion initiale:', err);
-        
-        // Tentative avec l'adresse IP directe de Supabase
+
+    for (let i = 0; i < retries; i++) {
         try {
-            const altConfig = {
-                ...config,
-                host: '146.190.28.188' // Adresse IP de Supabase
-            };
-            const altPool = new Pool(altConfig);
-            await altPool.query('SELECT NOW()');
-            console.log('Connexion à la base de données réussie via IP');
-            return altPool;
-        } catch (err2) {
-            console.error('Erreur de connexion alternative:', err2);
-            throw err2;
+            await pool.query('SELECT NOW()');
+            console.log('Connexion à la base de données réussie');
+            return pool;
+        } catch (err) {
+            console.error(`Tentative de connexion ${i + 1}/${retries} échouée:`, err.message);
+            if (i === retries - 1) throw err;
+            await new Promise(resolve => setTimeout(resolve, delay));
         }
     }
 };
 
-// Création du pool
-let pool;
-createPool()
-    .then(p => {
-        pool = p;
-        pool.on('error', err => {
+// Variable globale pour le pool
+let pool = null;
+
+// Initialisation du pool avec retry
+const initPool = async () => {
+    try {
+        pool = await connectWithRetry();
+        
+        pool.on('error', (err) => {
             console.error('Erreur inattendue du pool de connexion:', err);
+            // Tentative de reconnexion en cas d'erreur
+            setTimeout(initPool, 5000);
         });
-    })
-    .catch(err => {
-        console.error('Erreur fatale de connexion:', err);
+    } catch (err) {
+        console.error('Erreur fatale lors de l\'initialisation du pool:', err);
         process.exit(1);
-    });
+    }
+};
+
+// Initialisation immédiate
+initPool();
 
 // Export avec gestion d'erreur
 module.exports = {
