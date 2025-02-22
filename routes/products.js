@@ -5,6 +5,7 @@ const { AppError } = require("../middleware/errorHandler")
 const authMiddleware = require("../middleware/auth")
 const uploadFields = require("../middleware/upload")
 const { ProductController } = require("../controllers/productController")
+const db = require('../db')
 
 // Middleware de validation
 const validateRequest = (req, res, next) => {
@@ -35,11 +36,23 @@ router.get(
   ],
   validateRequest,
   async (req, res, next) => {
+    console.log('Requête GET /api/products reçue')
+    console.log('Query params:', req.query)
+    
     try {
       const result = await ProductController.getAllProducts(req, res, next)
       res.json(result)
     } catch (error) {
-      next(error)
+      console.error('Erreur lors de la récupération des produits:', error)
+      console.error('Détails de l\'erreur:', {
+        code: error.code,
+        message: error.message,
+        stack: error.stack
+      })
+      res.status(500).json({
+        error: 'Erreur lors de la récupération des produits',
+        details: error.message
+      })
     }
   }
 )
