@@ -1,9 +1,17 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+// Force IPv4
+const types = require('pg').types;
+types.setTypeParser(20, function(val) {
+    return parseInt(val, 10);
+});
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    // Force IPv4
+    family: 4
 });
 
 pool.on('error', (err) => {
