@@ -12,12 +12,16 @@ const app = express();
 
 // Création du dossier uploads s'il n'existe pas
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
-if (!fs.existsSync(uploadsDir)){
-    fs.mkdirSync(uploadsDir, { recursive: true });
-    console.log('Dossier uploads créé:', uploadsDir);
-} else {
-    console.log('Dossier uploads existant:', uploadsDir);
-}
+const archivesDir = path.join(__dirname, 'public', 'archives');
+
+[uploadsDir, archivesDir].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        console.log('Dossier créé:', dir);
+    } else {
+        console.log('Dossier existant:', dir);
+    }
+});
 
 // Configuration CORS améliorée
 const corsOptions = {
@@ -26,29 +30,32 @@ const corsOptions = {
             'https://reboulreactversion0.vercel.app',
             'https://reboulreactversion0-oy703bs4d-horsys-projects.vercel.app',
             'https://reboul-store.vercel.app',
-            'http://localhost:3000'
+            'http://localhost:3000',
+            'https://reboul-store-api-production.up.railway.app'
         ];
         
         // Permettre les requêtes sans origine (comme Postman)
         if (!origin) return callback(null, true);
         
-        if (allowedOrigins.indexOf(origin) !== -1) {
+        if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
             callback(null, true);
         } else {
             console.log('Origine bloquée:', origin);
             callback(new Error('Non autorisé par CORS'));
         }
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
     credentials: true,
     optionsSuccessStatus: 200,
-    maxAge: 3600 // Cache préflight pendant 1 heure
+    maxAge: 3600
 };
 
 // Middleware
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Logging middleware
 app.use((req, res, next) => {
@@ -57,21 +64,33 @@ app.use((req, res, next) => {
     next();
 });
 
-// Middleware pour les logs d'accès aux images
-app.use('/uploads', (req, res, next) => {
-    console.log(`Tentative d'accès à l'image: ${req.url}`);
+// Configuration des headers de sécurité et de cache
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
     next();
 });
 
 // Servir les fichiers statiques avec cache-control
-app.use('/api/uploads', express.static(path.join(__dirname, 'public', 'uploads'), {
+const staticOptions = {
     maxAge: '1h',
-    etag: true
-}));
-app.use('/api/archives', express.static(path.join(__dirname, 'public', 'archives'), {
-    maxAge: '1h',
-    etag: true
-}));
+    etag: true,
+    lastModified: true,
+    setHeaders: (res, path) => {
+        if (path.endsWith('.jpg') || path.endsWith('.png')) {
+            res.setHeader('Cache-Control', 'public, max-age=3600');
+        }
+    }
+};
+
+// Configuration des chemins statiques
+app.use('/api/uploads', express.static(path.join(__dirname, 'public', 'uploads'), staticOptions));
+app.use('/api/archives', express.static(path.join(__dirname, 'public', 'archives'), staticOptions));
+app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads'), staticOptions));
+app.use('/archives', express.static(path.join(__dirname, 'public', 'archives'), staticOptions));
+app.use('/brands', express.static(path.join(__dirname, 'public', 'brands'), staticOptions));
+app.use('/api/brands', express.static(path.join(__dirname, 'public', 'brands'), staticOptions));
 
 // Routes
 const categoriesRouter = require('./routes/categories');
@@ -101,7 +120,12 @@ app.use('/api/archives', archivesRouter);
 
 // Route de test
 app.get('/api', (req, res) => {
-    res.json({ message: 'Bienvenue sur l\'API de Reboul Store' });
+    res.json({ 
+        message: 'Bienvenue sur l\'API de Reboul Store',
+        status: 'running',
+        environment: process.env.NODE_ENV,
+        timestamp: new Date().toISOString()
+    });
 });
 
 // Configuration SMTP pour Gmail
