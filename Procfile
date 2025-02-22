@@ -1,2 +1,2 @@
-web: npm start
-release: chmod +x copy_brand_images.sh && ./copy_brand_images.sh 
+release: node init_brands.js
+web: npm start 

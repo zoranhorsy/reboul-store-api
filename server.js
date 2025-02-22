@@ -10,17 +10,38 @@ const uploadRoutes = require('./routes/upload');
 const adminRouter = require('./routes/admin');
 const app = express();
 
-// Création du dossier uploads s'il n'existe pas
+// Création des dossiers nécessaires
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
 const archivesDir = path.join(__dirname, 'public', 'archives');
 const brandsDir = path.join(__dirname, 'public', 'brands');
+const publicDir = path.join(__dirname, 'public');
 
+// S'assurer que le dossier public existe
+if (!fs.existsSync(publicDir)) {
+    fs.mkdirSync(publicDir, { recursive: true });
+    console.log('Dossier public créé:', publicDir);
+}
+
+// Créer les sous-dossiers nécessaires
 [uploadsDir, archivesDir, brandsDir].forEach(dir => {
-    if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-        console.log('Dossier créé:', dir);
-    } else {
-        console.log('Dossier existant:', dir);
+    try {
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+            console.log('Dossier créé:', dir);
+            // Définir les permissions
+            fs.chmodSync(dir, 0o755);
+        } else {
+            console.log('Dossier existant:', dir);
+            // Vérifier et corriger les permissions si nécessaire
+            try {
+                fs.accessSync(dir, fs.constants.R_OK | fs.constants.W_OK);
+            } catch (err) {
+                console.log('Correction des permissions pour:', dir);
+                fs.chmodSync(dir, 0o755);
+            }
+        }
+    } catch (error) {
+        console.error('Erreur lors de la création/vérification du dossier:', dir, error);
     }
 });
 
@@ -85,13 +106,37 @@ const staticOptions = {
     }
 };
 
-// Configuration des chemins statiques
-app.use('/api/uploads', express.static(path.join(__dirname, 'public', 'uploads'), staticOptions));
-app.use('/api/archives', express.static(path.join(__dirname, 'public', 'archives'), staticOptions));
-app.use('/uploads', express.static(path.join(__dirname, 'public', 'uploads'), staticOptions));
-app.use('/archives', express.static(path.join(__dirname, 'public', 'archives'), staticOptions));
-app.use('/brands', express.static(path.join(__dirname, 'public', 'brands'), staticOptions));
-app.use('/api/brands', express.static(path.join(__dirname, 'public', 'brands'), staticOptions));
+// Configuration des chemins statiques avec gestion d'erreur
+const serveStaticSafely = (route, directory) => {
+    app.use(route, (req, res, next) => {
+        express.static(directory, staticOptions)(req, res, err => {
+            if (err) {
+                console.error(`Erreur lors de la lecture du fichier statique ${req.path}:`, err);
+                // Si le fichier n'existe pas, renvoyer une image par défaut
+                if (err.code === 'ENOENT') {
+                    res.sendFile(path.join(__dirname, 'public', 'placeholder.png'), err => {
+                        if (err) {
+                            console.error('Erreur lors de l\'envoi du placeholder:', err);
+                            res.status(404).send('Image non trouvée');
+                        }
+                    });
+                } else {
+                    res.status(500).send('Erreur lors de la lecture du fichier');
+                }
+            } else {
+                next();
+            }
+        });
+    });
+};
+
+// Application des routes statiques avec la nouvelle fonction sécurisée
+serveStaticSafely('/api/uploads', uploadsDir);
+serveStaticSafely('/api/archives', archivesDir);
+serveStaticSafely('/api/brands', brandsDir);
+serveStaticSafely('/uploads', uploadsDir);
+serveStaticSafely('/archives', archivesDir);
+serveStaticSafely('/brands', brandsDir);
 
 // Routes
 const categoriesRouter = require('./routes/categories');
