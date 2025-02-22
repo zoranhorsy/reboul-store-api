@@ -173,6 +173,40 @@ app.post('/api/test-email', async (req, res) => {
     }
 });
 
+// Route de test pour les images des marques
+app.get('/test-images', (req, res) => {
+    const brandsDir = path.join(__dirname, 'public', 'brands');
+    const images = [];
+    
+    try {
+        // Lister tous les dossiers de marques
+        const brands = fs.readdirSync(brandsDir);
+        
+        // Pour chaque marque, lister les images
+        brands.forEach(brand => {
+            const brandPath = path.join(brandsDir, brand);
+            if (fs.statSync(brandPath).isDirectory()) {
+                const brandImages = fs.readdirSync(brandPath)
+                    .filter(file => file.endsWith('.png') || file.endsWith('.jpg'));
+                
+                images.push({
+                    brand,
+                    images: brandImages.map(img => `/brands/${brand}/${img}`)
+                });
+            }
+        });
+        
+        res.json({
+            success: true,
+            message: 'Liste des images disponibles',
+            images,
+            publicPath: brandsDir
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            publicPath: brandsDir
 // Middleware de gestion des erreurs
 app.use(errorHandler);
 
