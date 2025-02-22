@@ -1,2 +1,2 @@
 web: npm start
-release: node scripts/init-uploads.js 
+release: chmod +x copy_brand_images.sh && ./copy_brand_images.sh 
