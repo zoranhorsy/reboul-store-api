@@ -13,8 +13,9 @@ const app = express();
 // Création du dossier uploads s'il n'existe pas
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
 const archivesDir = path.join(__dirname, 'public', 'archives');
+const brandsDir = path.join(__dirname, 'public', 'brands');
 
-[uploadsDir, archivesDir].forEach(dir => {
+[uploadsDir, archivesDir, brandsDir].forEach(dir => {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
         console.log('Dossier créé:', dir);
@@ -207,6 +208,10 @@ app.get('/test-images', (req, res) => {
             success: false,
             error: error.message,
             publicPath: brandsDir
+        });
+    }
+});
+
 // Middleware de gestion des erreurs
 app.use(errorHandler);
 
