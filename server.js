@@ -47,65 +47,24 @@ if (!fs.existsSync(publicDir)) {
 
 // Configuration CORS améliorée
 const corsOptions = {
-    origin: function(origin, callback) {
-        // Liste des domaines autorisés
-        const allowedDomains = [
-            'vercel.app',
-            'reboul-store.vercel.app',
-            'localhost',
-            'railway.app'
-        ];
-        
-        // Permettre les requêtes sans origine (comme Postman)
-        if (!origin) {
-            console.log('Requête sans origine autorisée');
-            return callback(null, true);
-        }
-        
-        try {
-            // Créer un objet URL pour analyser l'origine
-            const originUrl = new URL(origin);
-            
-            // Vérifier si l'origine correspond à un domaine autorisé
-            const isAllowed = allowedDomains.some(domain => 
-                originUrl.hostname === domain || 
-                originUrl.hostname.endsWith('.' + domain)
-            );
-            
-            if (isAllowed || process.env.NODE_ENV === 'development') {
-                console.log('Origine autorisée:', origin);
-                callback(null, true);
-            } else {
-                console.log('Origine non autorisée:', origin);
-                callback(new Error(`Origine non autorisée: ${origin}`));
-            }
-        } catch (error) {
-            console.error('Erreur lors de l\'analyse de l\'origine:', error);
-            callback(new Error('Origine invalide'));
-        }
-    },
+    origin: '*', // Permettre toutes les origines en production
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     exposedHeaders: ['Content-Range', 'X-Content-Range'],
     credentials: true,
     optionsSuccessStatus: 200,
-    maxAge: 3600,
-    preflightContinue: false
+    maxAge: 3600
 };
 
-// Middleware CORS avec gestion d'erreur
+// Middleware CORS simple
+app.use(cors(corsOptions));
+
+// Headers CORS supplémentaires pour plus de compatibilité
 app.use((req, res, next) => {
-    cors(corsOptions)(req, res, (err) => {
-        if (err) {
-            console.error('Erreur CORS:', err);
-            return res.status(403).json({
-                error: 'CORS Error',
-                message: err.message,
-                origin: req.headers.origin
-            });
-        }
-        next();
-    });
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    next();
 });
 
 // Middleware
@@ -128,23 +87,40 @@ app.use((req, res, next) => {
 });
 
 // Configuration des dossiers statiques avec options
-app.use(express.static(publicDir, {
+app.use('/public', express.static(publicDir, {
     maxAge: '1h',
     etag: true,
     lastModified: true,
     setHeaders: (res, path) => {
-        // Log de l'accès aux fichiers
         console.log(`Fichier statique accédé: ${path}`);
-        
-        // Vérifier si le fichier existe
-        if (!fs.existsSync(path)) {
-            console.log(`Fichier non trouvé: ${path}`);
-            return;
-        }
-
-        // Headers pour le cache et CORS
         res.setHeader('Cache-Control', 'public, max-age=3600');
         res.setHeader('Access-Control-Allow-Origin', '*');
+        
+        // Définir le bon type MIME pour les images
+        if (path.endsWith('.png')) {
+            res.setHeader('Content-Type', 'image/png');
+        } else if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
+            res.setHeader('Content-Type', 'image/jpeg');
+        }
+    }
+}));
+
+// Servir les images des marques directement
+app.use('/brands', express.static(brandsDir, {
+    maxAge: '1h',
+    etag: true,
+    lastModified: true,
+    setHeaders: (res, path) => {
+        console.log(`Image de marque accédée: ${path}`);
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        
+        // Définir le bon type MIME
+        if (path.endsWith('.png')) {
+            res.setHeader('Content-Type', 'image/png');
+        } else if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
+            res.setHeader('Content-Type', 'image/jpeg');
+        }
     }
 }));
 
@@ -217,66 +193,39 @@ app.get('/test-images', (req, res) => {
     }
 });
 
-// Route spécifique pour les images des marques
+// Route spécifique pour les images des marques avec fallback
 app.get('/brands/:brand/:image', (req, res) => {
     const { brand, image } = req.params;
     console.log(`Demande d'image de marque: ${brand}/${image}`);
     
-    const imagePath = path.join(__dirname, 'public', 'brands', brand, image);
+    const imagePath = path.join(brandsDir, brand, image);
     console.log('Chemin complet:', imagePath);
     
-    // Vérifier si le dossier de la marque existe
-    const brandDir = path.join(__dirname, 'public', 'brands', brand);
-    if (!fs.existsSync(brandDir)) {
-        console.log(`Dossier de marque non trouvé: ${brandDir}`);
-        console.log('Dossiers disponibles:', fs.readdirSync(path.join(__dirname, 'public', 'brands')));
-        return res.status(404).json({ 
-            error: 'Brand directory not found',
-            brandDir,
-            availableBrands: fs.readdirSync(path.join(__dirname, 'public', 'brands'))
-        });
-    }
-
-    // Vérifier si l'image existe
     if (fs.existsSync(imagePath)) {
-        console.log('Image trouvée, envoi...');
-        // Vérifier les permissions
-        try {
-            fs.accessSync(imagePath, fs.constants.R_OK);
-            // Définir les headers appropriés
-            res.setHeader('Content-Type', `image/${path.extname(imagePath).slice(1)}`);
-            res.setHeader('Cache-Control', 'public, max-age=3600');
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            // Envoyer le fichier
-            res.sendFile(imagePath);
-        } catch (error) {
-            console.error('Erreur d\'accès au fichier:', error);
-            res.status(500).json({ 
-                error: 'File access error',
-                details: error.message,
-                path: imagePath
-            });
-        }
-    } else {
-        console.log('Image non trouvée, recherche du placeholder...');
-        // Lister les fichiers disponibles dans le dossier de la marque
-        const availableFiles = fs.readdirSync(brandDir);
-        console.log('Fichiers disponibles dans le dossier:', availableFiles);
+        const ext = path.extname(imagePath).toLowerCase();
+        const contentType = ext === '.png' ? 'image/png' : 'image/jpeg';
         
-        const placeholderPath = path.join(__dirname, 'public', 'placeholder.png');
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        
+        // Stream le fichier
+        const stream = fs.createReadStream(imagePath);
+        stream.pipe(res);
+    } else {
+        // Fallback vers le placeholder
+        const placeholderPath = path.join(publicDir, 'placeholder.png');
         if (fs.existsSync(placeholderPath)) {
-            console.log('Envoi du placeholder...');
             res.setHeader('Content-Type', 'image/png');
             res.setHeader('Cache-Control', 'public, max-age=3600');
             res.setHeader('Access-Control-Allow-Origin', '*');
-            res.sendFile(placeholderPath);
+            
+            const stream = fs.createReadStream(placeholderPath);
+            stream.pipe(res);
         } else {
-            console.log('Placeholder non trouvé');
             res.status(404).json({
-                error: 'Image and placeholder not found',
-                requestedPath: imagePath,
-                placeholderPath: placeholderPath,
-                availableFiles: availableFiles
+                error: 'Image not found',
+                requestedPath: imagePath
             });
         }
     }
@@ -359,6 +308,62 @@ app.post('/api/test-email', async (req, res) => {
                 response: error.response,
                 responseCode: error.responseCode
             }
+        });
+    }
+});
+
+// Route de test complète
+app.get('/status', (req, res) => {
+    try {
+        // Vérifier l'accès aux dossiers
+        const dirs = {
+            public: fs.accessSync(publicDir, fs.constants.R_OK | fs.constants.W_OK),
+            brands: fs.accessSync(brandsDir, fs.constants.R_OK | fs.constants.W_OK),
+            uploads: fs.accessSync(uploadsDir, fs.constants.R_OK | fs.constants.W_OK),
+            archives: fs.accessSync(archivesDir, fs.constants.R_OK | fs.constants.W_OK)
+        };
+
+        // Vérifier la base de données
+        db.pool.query('SELECT NOW()', (err, result) => {
+            const status = {
+                server: {
+                    status: 'running',
+                    environment: process.env.NODE_ENV,
+                    timestamp: new Date().toISOString(),
+                    node_version: process.version,
+                    memory_usage: process.memoryUsage(),
+                    uptime: process.uptime()
+                },
+                directories: {
+                    public: {
+                        path: publicDir,
+                        accessible: true,
+                        contents: fs.readdirSync(publicDir)
+                    },
+                    brands: {
+                        path: brandsDir,
+                        accessible: true,
+                        contents: fs.readdirSync(brandsDir)
+                    }
+                },
+                database: {
+                    connected: !err,
+                    timestamp: err ? null : result.rows[0].now,
+                    error: err ? err.message : null
+                },
+                cors: {
+                    enabled: true,
+                    origin: corsOptions.origin,
+                    methods: corsOptions.methods
+                }
+            };
+
+            res.json(status);
+        });
+    } catch (error) {
+        res.status(500).json({
+            error: 'Server status check failed',
+            details: error.message
         });
     }
 });
