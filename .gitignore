@@ -53,5 +53,10 @@ coverage
 .yarn-integrity
 
 # Uploads
-uploads/
-public/uploads/ 
+/public/uploads/*
+!/public/uploads/.gitkeep
+
+# Placeholders (keep these in git)
+!/public/placeholders/
+/public/placeholders/*
+!/public/placeholders/.gitkeep 

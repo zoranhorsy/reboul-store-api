@@ -6,7 +6,8 @@
     "start": "node --dns-result-order=ipv4first server.js",
     "dev": "nodemon --dns-result-order=ipv4first server.js",
     "test": "jest --detectOpenHandles",
-    "test:watch": "jest --watchAll"
+    "test:watch": "jest --watchAll",
+    "init-uploads": "node scripts/init-uploads.js"
   },
   "keywords": [],
   "author": "",
