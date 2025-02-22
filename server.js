@@ -48,34 +48,67 @@ if (!fs.existsSync(publicDir)) {
 // Configuration CORS améliorée
 const corsOptions = {
     origin: function(origin, callback) {
-        const allowedOrigins = [
-            'https://reboulreactversion0.vercel.app',
-            'https://reboulreactversion0-oy703bs4d-horsys-projects.vercel.app',
-            'https://reboul-store.vercel.app',
-            'http://localhost:3000',
-            'https://reboul-store-api-production.up.railway.app'
+        // Liste des domaines autorisés
+        const allowedDomains = [
+            'vercel.app',
+            'reboul-store.vercel.app',
+            'localhost',
+            'railway.app'
         ];
         
         // Permettre les requêtes sans origine (comme Postman)
-        if (!origin) return callback(null, true);
+        if (!origin) {
+            console.log('Requête sans origine autorisée');
+            return callback(null, true);
+        }
         
-        if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
-            callback(null, true);
-        } else {
-            console.log('Origine bloquée:', origin);
-            callback(new Error('Non autorisé par CORS'));
+        try {
+            // Créer un objet URL pour analyser l'origine
+            const originUrl = new URL(origin);
+            
+            // Vérifier si l'origine correspond à un domaine autorisé
+            const isAllowed = allowedDomains.some(domain => 
+                originUrl.hostname === domain || 
+                originUrl.hostname.endsWith('.' + domain)
+            );
+            
+            if (isAllowed || process.env.NODE_ENV === 'development') {
+                console.log('Origine autorisée:', origin);
+                callback(null, true);
+            } else {
+                console.log('Origine non autorisée:', origin);
+                callback(new Error(`Origine non autorisée: ${origin}`));
+            }
+        } catch (error) {
+            console.error('Erreur lors de l\'analyse de l\'origine:', error);
+            callback(new Error('Origine invalide'));
         }
     },
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     exposedHeaders: ['Content-Range', 'X-Content-Range'],
     credentials: true,
     optionsSuccessStatus: 200,
-    maxAge: 3600
+    maxAge: 3600,
+    preflightContinue: false
 };
 
+// Middleware CORS avec gestion d'erreur
+app.use((req, res, next) => {
+    cors(corsOptions)(req, res, (err) => {
+        if (err) {
+            console.error('Erreur CORS:', err);
+            return res.status(403).json({
+                error: 'CORS Error',
+                message: err.message,
+                origin: req.headers.origin
+            });
+        }
+        next();
+    });
+});
+
 // Middleware
-app.use(cors(corsOptions));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
