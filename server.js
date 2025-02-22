@@ -74,6 +74,43 @@ app.get('/api', (req, res) => {
     res.json({ message: 'Bienvenue sur l\'API de Reboul Store' });
 });
 
+// Route de test pour l'email
+app.post('/api/test-email', async (req, res) => {
+    try {
+        // Log des variables d'environnement (en masquant les valeurs sensibles)
+        console.log('Variables d\'environnement SMTP:', {
+            SMTP_HOST: process.env.SMTP_HOST,
+            SMTP_PORT: process.env.SMTP_PORT,
+            SMTP_USER: process.env.SMTP_USER,
+            SMTP_PASSWORD: process.env.SMTP_PASSWORD ? '***' : 'non défini'
+        });
+
+        // Tester l'envoi d'email
+        const info = await transporter.sendMail({
+            from: process.env.SMTP_USER,
+            to: req.body.to || process.env.SMTP_USER,
+            subject: 'Test Email - Reboul Store API',
+            text: 'Si vous recevez cet email, la configuration SMTP fonctionne correctement.',
+            html: '<h1>Test Email</h1><p>Si vous recevez cet email, la configuration SMTP fonctionne correctement.</p>'
+        });
+
+        console.log('Email de test envoyé:', info);
+        res.json({ success: true, messageId: info.messageId });
+    } catch (error) {
+        console.error('Erreur lors de l\'envoi de l\'email de test:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            details: {
+                code: error.code,
+                command: error.command,
+                response: error.response,
+                responseCode: error.responseCode
+            }
+        });
+    }
+});
+
 // Middleware de gestion des erreurs
 app.use(errorHandler);
 
