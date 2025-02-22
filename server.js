@@ -76,17 +76,28 @@ app.get('/api', (req, res) => {
 // Middleware de gestion des erreurs
 app.use(errorHandler);
 
-// Configuration SMTP
+// Configuration SMTP pour Gmail
 const smtpConfig = {
-    host: process.env.SMTP_HOST,
-    port: process.env.SMTP_PORT,
-    secure: false,
+    host: process.env.SMTP_HOST || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: false, // true pour 465, false pour 587
     auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASSWORD
+        user: process.env.SMTP_USER || 'horsydevservices@gmail.com',
+        pass: process.env.SMTP_PASSWORD // Doit être un mot de passe d'application Gmail
+    },
+    tls: {
+        rejectUnauthorized: false // Nécessaire en production
     }
 };
-console.log('Configuration SMTP:', smtpConfig);
+
+// Log de la configuration SMTP (en masquant le mot de passe)
+console.log('Configuration SMTP:', {
+    ...smtpConfig,
+    auth: {
+        ...smtpConfig.auth,
+        pass: '***'
+    }
+});
 
 // Démarrage du serveur
 const PORT = process.env.PORT || 5001;
