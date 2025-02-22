@@ -19,12 +19,18 @@ if (!fs.existsSync(uploadsDir)){
     console.log('Dossier uploads existant:', uploadsDir);
 }
 
-// Middleware
-app.use(cors({
-    origin: '*', // Attention : à utiliser uniquement en développement
+// Configuration CORS
+const corsOptions = {
+    origin: process.env.NODE_ENV === 'production' 
+        ? ['https://reboul-store.vercel.app', 'https://www.reboul-store.vercel.app']
+        : '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+};
+
+// Middleware
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Ajout du middleware de logging
