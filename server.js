@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
-const pool = require('./db');
+const db = require('./db');
 const { errorHandler } = require('./middleware/errorHandler');
 const uploadRoutes = require('./routes/upload');
 const adminRouter = require('./routes/admin');
@@ -91,21 +91,16 @@ console.log('Configuration SMTP:', smtpConfig);
 // Démarrage du serveur
 const PORT = process.env.PORT || 5001;
 
-const startServer = async () => {
-    try {
-        // Initialiser la connexion à la base de données
-        await pool.initialize();
-        console.log('Base de données initialisée avec succès');
-
-        // Démarrer le serveur
+// Test de connexion à la base de données avant de démarrer le serveur
+db.pool.query('SELECT NOW()', (err) => {
+    if (err) {
+        console.error('Erreur de connexion à la base de données:', err);
+        process.exit(1);
+    } else {
+        console.log('Connexion à la base de données réussie');
         app.listen(PORT, () => {
             console.log(`Serveur démarré sur le port ${PORT}`);
         });
-    } catch (error) {
-        console.error('Erreur lors du démarrage du serveur:', error);
-        process.exit(1);
     }
-};
-
-startServer();
+});
 
