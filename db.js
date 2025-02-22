@@ -9,7 +9,14 @@ const pool = new Pool({
     database: 'postgres',
     ssl: {
         rejectUnauthorized: false
-    }
+    },
+    // Options supplémentaires pour améliorer la connexion
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 30000,
+    max: 20,
+    application_name: 'reboul-store-api',
+    keepalive: true,
+    keepaliveInitialDelayMillis: 10000
 });
 
 // Test de connexion initial
