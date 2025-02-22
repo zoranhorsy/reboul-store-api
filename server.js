@@ -94,20 +94,95 @@ app.use((req, res, next) => {
     next();
 });
 
-// Servir les fichiers statiques avec cache-control
-const staticOptions = {
+// Configuration des dossiers statiques avec options
+app.use(express.static(publicDir, {
     maxAge: '1h',
     etag: true,
     lastModified: true,
     setHeaders: (res, path) => {
-        if (path.endsWith('.jpg') || path.endsWith('.png')) {
-            res.setHeader('Cache-Control', 'public, max-age=3600');
+        // Log de l'accès aux fichiers
+        console.log(`Fichier statique accédé: ${path}`);
+        
+        // Vérifier si le fichier existe
+        if (!fs.existsSync(path)) {
+            console.log(`Fichier non trouvé: ${path}`);
+            return;
         }
-    }
-};
 
-// Servir les fichiers statiques directement
-app.use(express.static(path.join(__dirname, 'public'), staticOptions));
+        // Headers pour le cache et CORS
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+}));
+
+// Route racine pour servir tous les fichiers du dossier public
+app.get('/', (req, res) => {
+    res.send('API Reboul Store');
+});
+
+// Route de test pour vérifier les chemins
+app.get('/check-paths', (req, res) => {
+    try {
+        const paths = {
+            publicDir: {
+                path: publicDir,
+                exists: fs.existsSync(publicDir),
+                isDirectory: fs.existsSync(publicDir) ? fs.statSync(publicDir).isDirectory() : false,
+                readable: fs.existsSync(publicDir) ? fs.accessSync(publicDir, fs.constants.R_OK) : false
+            },
+            brandsDir: {
+                path: brandsDir,
+                exists: fs.existsSync(brandsDir),
+                isDirectory: fs.existsSync(brandsDir) ? fs.statSync(brandsDir).isDirectory() : false,
+                readable: fs.existsSync(brandsDir) ? fs.accessSync(brandsDir, fs.constants.R_OK) : false,
+                contents: fs.existsSync(brandsDir) ? fs.readdirSync(brandsDir) : []
+            }
+        };
+        
+        // Log détaillé
+        console.log('Check paths result:', JSON.stringify(paths, null, 2));
+        
+        res.json(paths);
+    } catch (error) {
+        console.error('Error in check-paths:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Route pour tester les images
+app.get('/test-images', (req, res) => {
+    try {
+        const images = [];
+        const brandDirs = fs.readdirSync(brandsDir);
+        
+        brandDirs.forEach(brand => {
+            const brandPath = path.join(brandsDir, brand);
+            if (fs.statSync(brandPath).isDirectory()) {
+                const brandImages = fs.readdirSync(brandPath)
+                    .filter(file => file.match(/\.(jpg|jpeg|png)$/i))
+                    .map(file => `/brands/${brand}/${file}`);
+                images.push({
+                    brand,
+                    images: brandImages
+                });
+            }
+        });
+        
+        // Log détaillé
+        console.log('Test images result:', JSON.stringify(images, null, 2));
+        
+        res.json({
+            success: true,
+            message: "Liste des images disponibles",
+            images,
+            publicDir: publicDir,
+            brandsDir: brandsDir
+        });
+    } catch (error) {
+        console.error('Error in test-images:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Route spécifique pour les images des marques
 app.get('/brands/:brand/:image', (req, res) => {
@@ -129,27 +204,6 @@ app.get('/brands/:brand/:image', (req, res) => {
             res.status(404).send('Image non trouvée');
         }
     }
-});
-
-// Route de test pour vérifier les chemins
-app.get('/check-paths', (req, res) => {
-    const paths = {
-        publicDir: {
-            path: publicDir,
-            exists: fs.existsSync(publicDir),
-            isDirectory: fs.existsSync(publicDir) ? fs.statSync(publicDir).isDirectory() : false,
-            readable: fs.existsSync(publicDir) ? fs.accessSync(publicDir, fs.constants.R_OK) : false
-        },
-        brandsDir: {
-            path: brandsDir,
-            exists: fs.existsSync(brandsDir),
-            isDirectory: fs.existsSync(brandsDir) ? fs.statSync(brandsDir).isDirectory() : false,
-            readable: fs.existsSync(brandsDir) ? fs.accessSync(brandsDir, fs.constants.R_OK) : false,
-            contents: fs.existsSync(brandsDir) ? fs.readdirSync(brandsDir) : []
-        }
-    };
-    
-    res.json(paths);
 });
 
 // Routes
@@ -229,44 +283,6 @@ app.post('/api/test-email', async (req, res) => {
                 response: error.response,
                 responseCode: error.responseCode
             }
-        });
-    }
-});
-
-// Route de test pour les images des marques
-app.get('/test-images', (req, res) => {
-    const brandsDir = path.join(__dirname, 'public', 'brands');
-    const images = [];
-    
-    try {
-        // Lister tous les dossiers de marques
-        const brands = fs.readdirSync(brandsDir);
-        
-        // Pour chaque marque, lister les images
-        brands.forEach(brand => {
-            const brandPath = path.join(brandsDir, brand);
-            if (fs.statSync(brandPath).isDirectory()) {
-                const brandImages = fs.readdirSync(brandPath)
-                    .filter(file => file.endsWith('.png') || file.endsWith('.jpg'));
-                
-                images.push({
-                    brand,
-                    images: brandImages.map(img => `/brands/${brand}/${img}`)
-                });
-            }
-        });
-        
-        res.json({
-            success: true,
-            message: 'Liste des images disponibles',
-            images,
-            publicPath: brandsDir
-        });
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message,
-            publicPath: brandsDir
         });
     }
 });
