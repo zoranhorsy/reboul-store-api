@@ -2,21 +2,14 @@ const { Pool } = require('pg');
 require('dotenv').config();
 
 const pool = new Pool({
-    user: 'postgres',
-    password: 'DTDgjwuEWk0o3Iis',
-    host: 'db.imshohofssmnexditciw.supabase.co',
-    port: 5432,
-    database: 'postgres',
+    connectionString: process.env.DATABASE_URL || "postgresql://postgres:wuRWzXkTzKjXDFradojRvRtTDiSuOXos@nozomi.proxy.rlwy.net:14067/railway",
     ssl: {
         rejectUnauthorized: false
     },
-    // Options supplémentaires pour améliorer la connexion
+    // Options de connexion
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
-    max: 20,
-    application_name: 'reboul-store-api',
-    keepalive: true,
-    keepaliveInitialDelayMillis: 10000
+    max: 20
 });
 
 // Test de connexion initial
