@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 const db = require('./db');
 const { errorHandler } = require('./middleware/errorHandler');
@@ -98,6 +99,27 @@ console.log('Configuration SMTP:', {
         pass: '***'
     }
 });
+
+// Créer le transporteur SMTP
+const transporter = nodemailer.createTransport(smtpConfig);
+
+// Vérifier la connexion SMTP
+transporter.verify(function(error, success) {
+    if (error) {
+        console.error('Erreur de configuration SMTP:', error);
+        console.error('Détails de l\'erreur:', {
+            code: error.code,
+            command: error.command,
+            response: error.response,
+            responseCode: error.responseCode
+        });
+    } else {
+        console.log('Serveur SMTP prêt à envoyer des emails');
+    }
+});
+
+// Rendre le transporteur disponible globalement
+app.set('emailTransporter', transporter);
 
 // Démarrage du serveur
 const PORT = process.env.PORT || 5001;
