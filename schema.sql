@@ -18,6 +18,16 @@ CREATE TABLE users (
     notification_settings JSONB DEFAULT '{"push": false, "email": true, "security": true, "marketing": false}'
 );
 
+-- Création de la table brands
+CREATE TABLE brands (
+    id SERIAL PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    logo_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Création de la table categories
 CREATE TABLE categories (
     id SERIAL PRIMARY KEY,

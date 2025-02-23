@@ -98,3 +98,43 @@ psql "$RAILWAY_DB_URL" -c "SELECT id, name, description, logo_url FROM brands OR
 rm -f /tmp/brands_local.csv
 
 echo "Migration des marques terminée avec succès!"
+
+# Définir les chemins
+FRONTEND_BRANDS_DIR="../public/brands"
+BACKEND_BRANDS_DIR="public/brands"
+
+echo "Copie des images des marques depuis le frontend..."
+
+# Créer le dossier de destination s'il n'existe pas
+mkdir -p "$BACKEND_BRANDS_DIR"
+
+# Liste des marques
+BRANDS=(
+    "CP COMPANY"
+    "STONE ISLAND"
+    "SALOMON"
+    "PALM ANGELS"
+    "OFF-WHITE"
+)
+
+# Copier les images pour chaque marque
+for brand in "${BRANDS[@]}"; do
+    # Créer le dossier de la marque
+    brand_dir="$BACKEND_BRANDS_DIR/${brand}"
+    mkdir -p "$brand_dir"
+    
+    # Copier les images
+    if [ -d "$FRONTEND_BRANDS_DIR/${brand}" ]; then
+        echo "Copie des images pour ${brand}..."
+        cp -r "$FRONTEND_BRANDS_DIR/${brand}"/* "$brand_dir/"
+        echo "Images copiées pour ${brand}"
+    else
+        echo "Dossier source introuvable pour ${brand}"
+    fi
+done
+
+echo "Copie des images terminée"
+
+# Afficher la structure des dossiers
+echo "Structure des dossiers des marques :"
+ls -R "$BACKEND_BRANDS_DIR"
