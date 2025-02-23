@@ -25,20 +25,31 @@ const archivesDir = path.join(publicDir, 'archives');
 });
 
 // Configuration CORS
-app.use(cors({
-    origin: '*',
+const corsOptions = {
+    origin: [
+        'https://reboulreactversion0.vercel.app',
+        'https://reboul-store.vercel.app',
+        'http://localhost:3000'
+    ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     exposedHeaders: ['Content-Range', 'X-Content-Range'],
     credentials: true,
     maxAge: 3600
-}));
+};
 
-// Headers CORS supplémentaires
+// Middleware CORS
+app.use(cors(corsOptions));
+
+// Headers CORS supplémentaires pour plus de compatibilité
 app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', '*');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    const origin = req.headers.origin;
+    if (corsOptions.origin.includes(origin)) {
+        res.header('Access-Control-Allow-Origin', origin);
+    }
+    res.header('Access-Control-Allow-Methods', corsOptions.methods.join(', '));
+    res.header('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
+    res.header('Access-Control-Allow-Credentials', 'true');
     next();
 });
 
