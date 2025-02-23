@@ -10,56 +10,31 @@ const uploadRoutes = require('./routes/upload');
 const adminRouter = require('./routes/admin');
 const app = express();
 
-// Création des dossiers nécessaires
-const uploadsDir = path.join(__dirname, 'public', 'uploads');
-const archivesDir = path.join(__dirname, 'public', 'archives');
-const brandsDir = path.join(__dirname, 'public', 'brands');
+// Configuration des dossiers
 const publicDir = path.join(__dirname, 'public');
+const uploadsDir = path.join(publicDir, 'uploads');
+const brandsDir = path.join(publicDir, 'brands');
+const archivesDir = path.join(publicDir, 'archives');
 
-// S'assurer que le dossier public existe
-if (!fs.existsSync(publicDir)) {
-    fs.mkdirSync(publicDir, { recursive: true });
-    console.log('Dossier public créé:', publicDir);
-}
-
-// Créer les sous-dossiers nécessaires
-[uploadsDir, archivesDir, brandsDir].forEach(dir => {
-    try {
-        if (!fs.existsSync(dir)) {
-            fs.mkdirSync(dir, { recursive: true });
-            console.log('Dossier créé:', dir);
-            // Définir les permissions
-            fs.chmodSync(dir, 0o755);
-        } else {
-            console.log('Dossier existant:', dir);
-            // Vérifier et corriger les permissions si nécessaire
-            try {
-                fs.accessSync(dir, fs.constants.R_OK | fs.constants.W_OK);
-            } catch (err) {
-                console.log('Correction des permissions pour:', dir);
-                fs.chmodSync(dir, 0o755);
-            }
-        }
-    } catch (error) {
-        console.error('Erreur lors de la création/vérification du dossier:', dir, error);
+// Créer les dossiers s'ils n'existent pas
+[publicDir, uploadsDir, brandsDir, archivesDir].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+        console.log(`Dossier créé: ${dir}`);
     }
 });
 
-// Configuration CORS améliorée
-const corsOptions = {
-    origin: '*', // Permettre toutes les origines en production
+// Configuration CORS
+app.use(cors({
+    origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     exposedHeaders: ['Content-Range', 'X-Content-Range'],
     credentials: true,
-    optionsSuccessStatus: 200,
     maxAge: 3600
-};
+}));
 
-// Middleware CORS simple
-app.use(cors(corsOptions));
-
-// Headers CORS supplémentaires pour plus de compatibilité
+// Headers CORS supplémentaires
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD');
@@ -67,7 +42,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// Middleware
+// Middleware pour parser le JSON
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -86,7 +61,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// Configuration des dossiers statiques avec options
+// Configuration des dossiers statiques
 app.use('/public', express.static(publicDir, {
     maxAge: '1h',
     etag: true,
@@ -95,17 +70,10 @@ app.use('/public', express.static(publicDir, {
         console.log(`Fichier statique accédé: ${path}`);
         res.setHeader('Cache-Control', 'public, max-age=3600');
         res.setHeader('Access-Control-Allow-Origin', '*');
-        
-        // Définir le bon type MIME pour les images
-        if (path.endsWith('.png')) {
-            res.setHeader('Content-Type', 'image/png');
-        } else if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
-            res.setHeader('Content-Type', 'image/jpeg');
-        }
     }
 }));
 
-// Servir les images des marques directement
+// Route spécifique pour les images des marques
 app.use('/brands', express.static(brandsDir, {
     maxAge: '1h',
     etag: true,
@@ -114,20 +82,8 @@ app.use('/brands', express.static(brandsDir, {
         console.log(`Image de marque accédée: ${path}`);
         res.setHeader('Cache-Control', 'public, max-age=3600');
         res.setHeader('Access-Control-Allow-Origin', '*');
-        
-        // Définir le bon type MIME
-        if (path.endsWith('.png')) {
-            res.setHeader('Content-Type', 'image/png');
-        } else if (path.endsWith('.jpg') || path.endsWith('.jpeg')) {
-            res.setHeader('Content-Type', 'image/jpeg');
-        }
     }
 }));
-
-// Route racine pour servir tous les fichiers du dossier public
-app.get('/', (req, res) => {
-    res.send('API Reboul Store');
-});
 
 // Route de test pour vérifier les chemins
 app.get('/check-paths', (req, res) => {
@@ -148,17 +104,13 @@ app.get('/check-paths', (req, res) => {
             }
         };
         
-        // Log détaillé
-        console.log('Check paths result:', JSON.stringify(paths, null, 2));
-        
         res.json(paths);
     } catch (error) {
-        console.error('Error in check-paths:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// Route pour tester les images
+// Route de test pour les images
 app.get('/test-images', (req, res) => {
     try {
         const images = [];
@@ -177,9 +129,6 @@ app.get('/test-images', (req, res) => {
             }
         });
         
-        // Log détaillé
-        console.log('Test images result:', JSON.stringify(images, null, 2));
-        
         res.json({
             success: true,
             message: "Liste des images disponibles",
@@ -188,48 +137,36 @@ app.get('/test-images', (req, res) => {
             brandsDir: brandsDir
         });
     } catch (error) {
-        console.error('Error in test-images:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// Route spécifique pour les images des marques avec fallback
-app.get('/brands/:brand/:image', (req, res) => {
-    const { brand, image } = req.params;
-    console.log(`Demande d'image de marque: ${brand}/${image}`);
-    
-    const imagePath = path.join(brandsDir, brand, image);
-    console.log('Chemin complet:', imagePath);
-    
-    if (fs.existsSync(imagePath)) {
-        const ext = path.extname(imagePath).toLowerCase();
-        const contentType = ext === '.png' ? 'image/png' : 'image/jpeg';
-        
-        res.setHeader('Content-Type', contentType);
-        res.setHeader('Cache-Control', 'public, max-age=3600');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        
-        // Stream le fichier
-        const stream = fs.createReadStream(imagePath);
-        stream.pipe(res);
-    } else {
-        // Fallback vers le placeholder
-        const placeholderPath = path.join(publicDir, 'placeholder.png');
-        if (fs.existsSync(placeholderPath)) {
-            res.setHeader('Content-Type', 'image/png');
-            res.setHeader('Cache-Control', 'public, max-age=3600');
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            
-            const stream = fs.createReadStream(placeholderPath);
-            stream.pipe(res);
-        } else {
-            res.status(404).json({
-                error: 'Image not found',
-                requestedPath: imagePath
-            });
-        }
-    }
+// Route racine pour tester l'API
+app.get('/', (req, res) => {
+    res.json({
+        message: 'API Reboul Store',
+        version: '1.0.0',
+        status: 'running'
+    });
 });
+
+// Route API
+app.get('/api', (req, res) => {
+    res.json({
+        message: 'API Reboul Store',
+        version: '1.0.0',
+        endpoints: [
+            '/api/products',
+            '/api/categories',
+            '/api/brands',
+            '/check-paths',
+            '/test-images'
+        ]
+    });
+});
+
+// Importer et utiliser les routes
+app.use('/api/products', require('./routes/products'));
 
 // Routes
 const categoriesRouter = require('./routes/categories');
@@ -256,16 +193,6 @@ app.use('/api/admin', adminRouter);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/stats', statsRouter);
 app.use('/api/archives', archivesRouter);
-
-// Route de test
-app.get('/api', (req, res) => {
-    res.json({ 
-        message: 'Bienvenue sur l\'API de Reboul Store',
-        status: 'running',
-        environment: process.env.NODE_ENV,
-        timestamp: new Date().toISOString()
-    });
-});
 
 // Configuration SMTP pour Gmail
 const smtpConfig = {
@@ -353,8 +280,8 @@ app.get('/status', (req, res) => {
                 },
                 cors: {
                     enabled: true,
-                    origin: corsOptions.origin,
-                    methods: corsOptions.methods
+                    origin: cors.origin,
+                    methods: cors.methods
                 }
             };
 
@@ -372,7 +299,7 @@ app.get('/status', (req, res) => {
 app.use(errorHandler);
 
 // Démarrage du serveur
-const PORT = process.env.PORT || 5001;
+const port = process.env.PORT || 5001;
 
 // Test de connexion à la base de données avant de démarrer le serveur
 db.pool.query('SELECT NOW()', (err) => {
@@ -381,12 +308,11 @@ db.pool.query('SELECT NOW()', (err) => {
         process.exit(1);
     } else {
         console.log('Connexion à la base de données réussie');
-        app.listen(PORT, () => {
-            console.log(`Serveur démarré sur le port ${PORT}`);
-            console.log('Configuration CORS:', {
-                origins: corsOptions.origin,
-                methods: corsOptions.methods
-            });
+        app.listen(port, () => {
+            console.log(`Serveur démarré sur le port ${port}`);
+            console.log('Environnement:', process.env.NODE_ENV);
+            console.log('Dossier public:', publicDir);
+            console.log('Dossier des marques:', brandsDir);
         });
     }
 });
