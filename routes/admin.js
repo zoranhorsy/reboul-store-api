@@ -56,19 +56,78 @@ router.post('/users', authMiddleware, adminMiddleware, async (req, res, next) =>
 // Get dashboard stats
 router.get('/dashboard/stats', authMiddleware, adminMiddleware, async (req, res, next) => {
     try {
-        const totalUsers = await pool.query('SELECT COUNT(*) FROM users');
-        const totalProducts = await pool.query('SELECT COUNT(*) FROM products');
-        const totalOrders = await pool.query('SELECT COUNT(*) FROM orders');
-        const totalRevenue = await pool.query('SELECT SUM(total_amount) FROM orders');
+        // Récupérer le total des revenus
+        const revenueResult = await pool.query(
+            'SELECT COALESCE(SUM(total_amount), 0) as total FROM orders'
+        );
+        const totalRevenue = parseFloat(revenueResult.rows[0].total);
+
+        // Récupérer le nombre total de commandes
+        const ordersResult = await pool.query(
+            'SELECT COUNT(*) as total FROM orders'
+        );
+        const totalOrders = parseInt(ordersResult.rows[0].total);
+
+        // Récupérer le nombre total de produits
+        const productsResult = await pool.query(
+            'SELECT COUNT(*) as total FROM products'
+        );
+        const totalProducts = parseInt(productsResult.rows[0].total);
+
+        // Récupérer le nombre total d'utilisateurs
+        const usersResult = await pool.query(
+            'SELECT COUNT(*) as total FROM users'
+        );
+        const totalUsers = parseInt(usersResult.rows[0].total);
+
+        // Récupérer les commandes récentes
+        const recentOrders = await pool.query(`
+            SELECT 
+                o.id,
+                u.username as customer,
+                o.total_amount as total,
+                o.created_at as date,
+                o.status
+            FROM orders o
+            LEFT JOIN users u ON o.user_id = u.id
+            ORDER BY o.created_at DESC
+            LIMIT 5
+        `);
+
+        // Récupérer les ventes hebdomadaires
+        const weeklySales = await pool.query(`
+            SELECT 
+                DATE_TRUNC('day', created_at) as date,
+                SUM(total_amount) as total
+            FROM orders
+            WHERE created_at >= NOW() - INTERVAL '7 days'
+            GROUP BY DATE_TRUNC('day', created_at)
+            ORDER BY date DESC
+        `);
 
         res.json({
-            totalUsers: totalUsers.rows[0].count,
-            totalProducts: totalProducts.rows[0].count,
-            totalOrders: totalOrders.rows[0].count,
-            totalRevenue: totalRevenue.rows[0].sum || 0
+            totalRevenue,
+            totalOrders,
+            totalProducts,
+            totalUsers,
+            recentOrders: recentOrders.rows.map(order => ({
+                id: order.id,
+                customer: order.customer || 'Anonyme',
+                total: parseFloat(order.total),
+                date: order.date,
+                status: order.status
+            })),
+            weeklySales: weeklySales.rows.map(sale => ({
+                date: sale.date,
+                total: parseFloat(sale.total)
+            }))
         });
     } catch (error) {
-        next(new AppError('Error fetching dashboard stats', 500));
+        console.error('Erreur lors de la récupération des statistiques:', error);
+        res.status(500).json({
+            error: 'Erreur lors de la récupération des statistiques',
+            details: error.message
+        });
     }
 });
 
