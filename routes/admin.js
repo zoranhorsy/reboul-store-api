@@ -55,7 +55,11 @@ router.post('/users', authMiddleware, adminMiddleware, async (req, res, next) =>
 
 // Get dashboard stats
 router.get('/dashboard/stats', authMiddleware, adminMiddleware, async (req, res, next) => {
+    console.log('Backend - Dashboard stats request received');
+    console.log('Backend - User:', req.user);
+
     try {
+        console.log('Backend - Fetching revenue and orders...');
         // Récupérer le total des revenus et commandes
         const revenueAndOrders = await pool.query(`
             SELECT 
@@ -63,13 +67,19 @@ router.get('/dashboard/stats', authMiddleware, adminMiddleware, async (req, res,
                 COUNT(*) as total_orders
             FROM orders
         `);
+        console.log('Backend - Revenue and orders:', revenueAndOrders.rows[0]);
 
+        console.log('Backend - Fetching products count...');
         // Récupérer le nombre total de produits
         const productsCount = await pool.query('SELECT COUNT(*) as total_products FROM products');
+        console.log('Backend - Products count:', productsCount.rows[0]);
 
+        console.log('Backend - Fetching users count...');
         // Récupérer le nombre total d'utilisateurs
         const usersCount = await pool.query('SELECT COUNT(*) as total_users FROM users');
+        console.log('Backend - Users count:', usersCount.rows[0]);
 
+        console.log('Backend - Fetching recent orders...');
         // Récupérer les commandes récentes
         const recentOrders = await pool.query(`
             SELECT 
@@ -83,7 +93,9 @@ router.get('/dashboard/stats', authMiddleware, adminMiddleware, async (req, res,
             ORDER BY o.created_at DESC
             LIMIT 5
         `);
+        console.log('Backend - Recent orders:', recentOrders.rows);
 
+        console.log('Backend - Fetching weekly sales...');
         // Récupérer les ventes hebdomadaires
         const weeklySales = await pool.query(`
             SELECT 
@@ -94,6 +106,7 @@ router.get('/dashboard/stats', authMiddleware, adminMiddleware, async (req, res,
             GROUP BY DATE(created_at)
             ORDER BY date DESC
         `);
+        console.log('Backend - Weekly sales:', weeklySales.rows);
 
         const stats = {
             totalRevenue: parseFloat(revenueAndOrders.rows[0].total_revenue),
@@ -110,12 +123,19 @@ router.get('/dashboard/stats', authMiddleware, adminMiddleware, async (req, res,
             }))
         };
 
+        console.log('Backend - Sending response:', stats);
         res.json(stats);
     } catch (error) {
-        console.error('Erreur lors de la récupération des statistiques:', error);
+        console.error('Backend - Error fetching stats:', error);
+        console.error('Backend - Error details:', {
+            message: error.message,
+            stack: error.stack,
+            code: error.code
+        });
         res.status(500).json({ 
             error: 'Erreur lors de la récupération des statistiques',
-            details: error.message
+            details: error.message,
+            code: error.code
         });
     }
 });
