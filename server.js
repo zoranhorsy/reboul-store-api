@@ -25,12 +25,27 @@ const archivesDir = path.join(publicDir, 'archives');
 });
 
 // Configuration CORS
+const allowedOrigins = [
+    'https://reboulreactversion0.vercel.app',
+    'https://reboul-store.vercel.app',
+    'http://localhost:3000'
+];
+
 const corsOptions = {
-    origin: [
-        'https://reboulreactversion0.vercel.app',
-        'https://reboul-store.vercel.app',
-        'http://localhost:3000'
-    ],
+    origin: function(origin, callback) {
+        console.log('Origin de la requête:', origin);
+        
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) {
+            return callback(null, true);
+        }
+        
+        if (allowedOrigins.includes(origin)) {
+            callback(null, origin);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     exposedHeaders: ['Content-Range', 'X-Content-Range'],
@@ -40,18 +55,6 @@ const corsOptions = {
 
 // Middleware CORS
 app.use(cors(corsOptions));
-
-// Headers CORS supplémentaires pour plus de compatibilité
-app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    if (corsOptions.origin.includes(origin)) {
-        res.header('Access-Control-Allow-Origin', origin);
-    }
-    res.header('Access-Control-Allow-Methods', corsOptions.methods.join(', '));
-    res.header('Access-Control-Allow-Headers', corsOptions.allowedHeaders.join(', '));
-    res.header('Access-Control-Allow-Credentials', 'true');
-    next();
-});
 
 // Middleware pour parser le JSON
 app.use(express.json({ limit: '50mb' }));
@@ -73,12 +76,34 @@ app.use((req, res, next) => {
 });
 
 // Configuration des dossiers statiques
-app.use('/public', express.static(publicDir, {
+app.use('/uploads', express.static(uploadsDir, {
     maxAge: '1h',
     etag: true,
     lastModified: true,
     setHeaders: (res, path) => {
-        console.log(`Fichier statique accédé: ${path}`);
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+}));
+
+app.use('/archives', express.static(archivesDir, {
+    maxAge: '1h',
+    etag: true,
+    lastModified: true,
+    setHeaders: (res, path) => {
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+    }
+}));
+
+app.use('/brands', express.static(brandsDir, {
+    maxAge: '1h',
+    etag: true,
+    lastModified: true,
+    setHeaders: (res, path) => {
+        console.log(`Serving brand image: ${path}`);
+        console.log(`Full path: ${path.join(brandsDir, path)}`);
+        console.log(`File exists: ${fs.existsSync(path)}`);
         res.setHeader('Cache-Control', 'public, max-age=3600');
         res.setHeader('Access-Control-Allow-Origin', '*');
     }
@@ -262,7 +287,7 @@ app.get('/status', (req, res) => {
         };
 
         // Vérifier la base de données
-        db.pool.query('SELECT NOW()', (err, result) => {
+        db.query('SELECT NOW()', (err, result) => {
             const status = {
                 server: {
                     status: 'running',
@@ -306,19 +331,52 @@ app.get('/status', (req, res) => {
     }
 });
 
+// Route de test pour les images des marques
+app.get('/api/test-brand-images', (req, res) => {
+    try {
+        const brandName = req.query.brand;
+        const brandPath = path.join(brandsDir, brandName || '');
+        
+        const result = {
+            brandsDir: {
+                path: brandsDir,
+                exists: fs.existsSync(brandsDir),
+                isDirectory: fs.existsSync(brandsDir) ? fs.statSync(brandsDir).isDirectory() : false,
+                permissions: fs.existsSync(brandsDir) ? fs.statSync(brandsDir).mode.toString(8) : null,
+                contents: fs.existsSync(brandsDir) ? fs.readdirSync(brandsDir) : []
+            }
+        };
+        
+        if (brandName) {
+            result.brandPath = {
+                path: brandPath,
+                exists: fs.existsSync(brandPath),
+                isDirectory: fs.existsSync(brandPath) ? fs.statSync(brandPath).isDirectory() : false,
+                permissions: fs.existsSync(brandPath) ? fs.statSync(brandPath).mode.toString(8) : null,
+                contents: fs.existsSync(brandPath) && fs.statSync(brandPath).isDirectory() 
+                    ? fs.readdirSync(brandPath) 
+                    : []
+            };
+        }
+        
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Middleware de gestion des erreurs
 app.use(errorHandler);
 
 // Démarrage du serveur
 const port = process.env.PORT || 5001;
 
-// Test de connexion à la base de données avant de démarrer le serveur
-db.pool.query('SELECT NOW()', (err) => {
+// Test de connexion initial
+db.query('SELECT NOW()', (err) => {
     if (err) {
-        console.error('Erreur de connexion à la base de données:', err);
-        process.exit(1);
+        console.error('Erreur lors du test de connexion:', err);
     } else {
-        console.log('Connexion à la base de données réussie');
+        console.log('Test de connexion réussi');
         app.listen(port, () => {
             console.log(`Serveur démarré sur le port ${port}`);
             console.log('Environnement:', process.env.NODE_ENV);

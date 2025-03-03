@@ -50,12 +50,5 @@ pool.on('error', (err) => {
     });
 });
 
-module.exports = {
-    query: (text, params) => {
-        console.log('Exécution de la requête:', text);
-        console.log('Paramètres:', params);
-        return pool.query(text, params);
-    },
-    pool
-};
+module.exports = pool;
 

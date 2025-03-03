@@ -28,7 +28,16 @@ const orderValidations = [
     body('items.*.quantity').isInt({ min: 1 }).withMessage('La quantité doit être un nombre entier positif'),
     body('items.*.variant').isObject().withMessage('Les informations de variant sont requises'),
     body('items.*.variant.size').isString().withMessage('La taille est requise'),
-    body('items.*.variant.color').isString().withMessage('La couleur est requise')
+    body('items.*.variant.color').isString().withMessage('La couleur est requise'),
+    body('shipping_info').isObject().withMessage('Les informations de livraison sont requises'),
+    body('shipping_info.firstName').isString().notEmpty().withMessage('Le prénom est requis'),
+    body('shipping_info.lastName').isString().notEmpty().withMessage('Le nom est requis'),
+    body('shipping_info.email').isEmail().withMessage('L\'email est invalide'),
+    body('shipping_info.phone').matches(/^(?:(?:\+|00)33|0)\s*[1-9](?:[\s.-]*\d{2}){4}$/).withMessage('Le numéro de téléphone est invalide'),
+    body('shipping_info.address').isString().notEmpty().withMessage('L\'adresse est requise'),
+    body('shipping_info.city').isString().notEmpty().withMessage('La ville est requise'),
+    body('shipping_info.postalCode').matches(/^\d{5}$/).withMessage('Le code postal doit contenir 5 chiffres'),
+    body('shipping_info.country').isString().notEmpty().withMessage('Le pays est requis')
 ];
 
 // GET les commandes de l'utilisateur connecté
@@ -114,7 +123,7 @@ router.post('/',
     async (req, res, next) => {
         let client;
         try {
-            client = await pool.pool.connect();
+            client = await pool.connect();
             const { items, shipping_info } = req.body;
             let totalAmount = 0;
 
@@ -122,102 +131,109 @@ router.post('/',
 
             // Vérifier le stock et calculer le montant total
             for (const item of items) {
-                // Verrouiller la ligne du produit pour éviter les conflits
-                const { rows } = await client.query(
-                    'SELECT price, variants FROM products WHERE id = $1 FOR UPDATE',
-                    [item.product_id]
-                );
-                
-                if (rows.length === 0) {
-                    throw new AppError(`Produit avec l'ID ${item.product_id} non trouvé`, 404);
-                }
-
-                const product = rows[0];
-                
-                // Trouver le variant correspondant
-                const variant = product.variants.find(
-                    v => v.size === item.variant.size && v.color === item.variant.color
-                );
-
-                if (!variant) {
-                    throw new AppError(
-                        `Variant non trouvé pour le produit ${item.product_id} (taille: ${item.variant.size}, couleur: ${item.variant.color})`,
-                        404
+                try {
+                    // Verrouiller la ligne du produit pour éviter les conflits
+                    const { rows } = await client.query(
+                        'SELECT price, variants FROM products WHERE id = $1 FOR UPDATE',
+                        [item.product_id]
                     );
-                }
+                    
+                    if (rows.length === 0) {
+                        throw new AppError(`Produit avec l'ID ${item.product_id} non trouvé`, 404);
+                    }
 
-                // Vérification du stock du variant
-                if (variant.stock < item.quantity) {
-                    throw new AppError(
-                        `Stock insuffisant pour le produit ${item.product_id} (${item.variant.color} - ${item.variant.size}). ` +
-                        `Stock disponible: ${variant.stock}, Quantité demandée: ${item.quantity}`,
-                        400
+                    const product = rows[0];
+                    
+                    // Trouver le variant correspondant
+                    const variant = product.variants.find(
+                        v => v.size === item.variant.size && v.color === item.variant.color
                     );
+
+                    if (!variant) {
+                        throw new AppError(
+                            `Variant non trouvé pour le produit ${item.product_id} (taille: ${item.variant.size}, couleur: ${item.variant.color})`,
+                            404
+                        );
+                    }
+
+                    // Vérification du stock du variant
+                    if (variant.stock < item.quantity) {
+                        throw new AppError(
+                            `Stock insuffisant pour le produit ${item.product_id} (${item.variant.color} - ${item.variant.size}). ` +
+                            `Stock disponible: ${variant.stock}, Quantité demandée: ${item.quantity}`,
+                            400
+                        );
+                    }
+
+                    // Mettre à jour le stock du variant
+                    variant.stock -= item.quantity;
+
+                    // Mettre à jour les variants dans la base de données
+                    await client.query(
+                        'UPDATE products SET variants = $1 WHERE id = $2',
+                        [JSON.stringify(product.variants), item.product_id]
+                    );
+
+                    totalAmount += product.price * item.quantity;
+                } catch (error) {
+                    throw new AppError(error.message || 'Erreur lors de la vérification du produit', error.status || 500);
                 }
-
-                // Mettre à jour le stock du variant
-                variant.stock -= item.quantity;
-
-                // Mettre à jour les variants dans la base de données
-                await client.query(
-                    'UPDATE products SET variants = $1 WHERE id = $2',
-                    [JSON.stringify(product.variants), item.product_id]
-                );
-
-                totalAmount += product.price * item.quantity;
             }
 
             // Générer un numéro de commande unique
             const timestamp = Date.now();
             const orderNumber = `ORD-${timestamp}`;
 
-            // Créer la commande
-            const orderResult = await client.query(
-                'INSERT INTO orders (user_id, total_amount, shipping_info, status, payment_status, order_number) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-                [req.user.id, totalAmount, shipping_info, 'pending', 'completed', orderNumber]
-            );
-            
-            const orderId = orderResult.rows[0].id;
-
-            // Créer les items de la commande avec les informations de variant
-            for (const item of items) {
-                await client.query(
-                    'INSERT INTO order_items (order_id, product_id, quantity, price, variant_info) VALUES ($1, $2, $3, (SELECT price FROM products WHERE id = $2), $4)',
-                    [orderId, item.product_id, item.quantity, JSON.stringify(item.variant)]
-                );
-            }
-
-            await client.query('COMMIT');
-
-            // Récupérer la commande complète
-            const finalOrder = await client.query(
-                `SELECT o.*, 
-                        json_agg(json_build_object(
-                            'product_id', oi.product_id,
-                            'quantity', oi.quantity,
-                            'price', oi.price,
-                            'variant', oi.variant_info
-                        )) as items
-                 FROM orders o
-                 LEFT JOIN order_items oi ON o.id = oi.order_id
-                 WHERE o.id = $1
-                 GROUP BY o.id`,
-                [orderId]
-            );
-
-            // Envoyer l'email de confirmation
             try {
-                await sendOrderConfirmation(finalOrder.rows[0]);
-                console.log('Email de confirmation envoyé avec succès');
-            } catch (emailError) {
-                console.error('Erreur lors de l\'envoi de l\'email de confirmation:', emailError);
+                // Créer la commande
+                const orderResult = await client.query(
+                    'INSERT INTO orders (user_id, total_amount, shipping_info, status, payment_status, order_number) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+                    [req.user.id, totalAmount, JSON.stringify(shipping_info), 'pending', 'completed', orderNumber]
+                );
+                
+                const orderId = orderResult.rows[0].id;
+
+                // Créer les items de la commande avec les informations de variant
+                for (const item of items) {
+                    await client.query(
+                        'INSERT INTO order_items (order_id, product_id, quantity, price, variant_info, product_name) VALUES ($1, $2, $3, (SELECT price FROM products WHERE id = $2), $4, (SELECT name FROM products WHERE id = $2))',
+                        [orderId, item.product_id, item.quantity, JSON.stringify(item.variant)]
+                    );
+                }
+
+                await client.query('COMMIT');
+
+                // Récupérer la commande complète
+                const finalOrder = await client.query(
+                    `SELECT o.*, 
+                            json_agg(json_build_object(
+                                'product_id', oi.product_id,
+                                'quantity', oi.quantity,
+                                'price', oi.price,
+                                'variant', oi.variant_info
+                            )) as items
+                     FROM orders o
+                     LEFT JOIN order_items oi ON o.id = oi.order_id
+                     WHERE o.id = $1
+                     GROUP BY o.id`,
+                    [orderId]
+                );
+
+                // Envoyer l'email de confirmation
+                try {
+                    await sendOrderConfirmation(finalOrder.rows[0]);
+                    console.log('Email de confirmation envoyé avec succès');
+                } catch (emailError) {
+                    console.error('Erreur lors de l\'envoi de l\'email de confirmation:', emailError);
+                }
+
+                res.status(201).json(finalOrder.rows[0]);
+            } catch (error) {
+                throw new AppError(error.message || 'Erreur lors de la création de la commande', 500);
             }
-
-            res.status(201).json(finalOrder.rows[0]);
-
         } catch (err) {
             if (client) await client.query('ROLLBACK');
-            next(err);
+            next(err instanceof AppError ? err : new AppError(err.message || 'Erreur serveur interne', 500));
         } finally {
             if (client) client.release();
         }
