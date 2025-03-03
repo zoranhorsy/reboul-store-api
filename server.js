@@ -16,11 +16,22 @@ const uploadsDir = path.join(publicDir, 'uploads');
 const brandsDir = path.join(publicDir, 'brands');
 const archivesDir = path.join(publicDir, 'archives');
 
+console.log('Chemins des dossiers:');
+console.log('publicDir:', publicDir);
+console.log('brandsDir:', brandsDir);
+console.log('uploadsDir:', uploadsDir);
+console.log('archivesDir:', archivesDir);
+
 // Créer les dossiers s'ils n'existent pas
 [publicDir, uploadsDir, brandsDir, archivesDir].forEach(dir => {
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
         console.log(`Dossier créé: ${dir}`);
+    } else {
+        console.log(`Dossier existant: ${dir}`);
+        if (dir === brandsDir) {
+            console.log('Contenu du dossier brands:', fs.readdirSync(dir));
+        }
     }
 });
 
