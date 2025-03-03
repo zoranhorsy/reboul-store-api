@@ -1,0 +1,85 @@
+-- Mise à jour des chemins pour les logos noirs
+UPDATE brands 
+SET logo_dark = CASE
+    WHEN name = 'AFTER LABEL' THEN '/brands/AFTERLABEL/AFTERLABEL_b.png'
+    WHEN name = 'ATELIER DE NIMES' THEN '/brands/ATELIERDENIMES/ATELIERDENIMES_b.png'
+    WHEN name = 'AXEL ARIGATO' THEN '/brands/AXELARIGATO/AXELARIGATO_b.png'
+    WHEN name = 'BISOUS SKATEBOARDS' THEN '/brands/BISOUSSKATEBOARDS/BISOUSSKATEBOARDS_b.png'
+    WHEN name = 'CP COMPANY' THEN '/brands/CPCOMPANY/CPCOMPANY_b.png'
+    WHEN name = 'DOLCE & GABBANA' THEN '/brands/DOLCEGABBANA/DOLCEGABBANA_b.png'
+    WHEN name = 'GOLDEN GOOSE' THEN '/brands/GOLDENGOOSE/GOLDENGOOSE_b.png'
+    WHEN name = 'MAISON LABICHE' THEN '/brands/MAISONLABICHE/MAISONLABICHE_b.png'
+    WHEN name = 'NEW BALANCE' THEN '/brands/NEWBALANCE/NEWBALANCE_b.png'
+    WHEN name = 'NORSE PROJECTS' THEN '/brands/NORSEPROJECTS/NORSEPROJECTS_b.png'
+    WHEN name = 'PALM ANGELS' THEN '/brands/PALMANGELS/PALMANGELS_b.png'
+    WHEN name = 'PHILIP KARTO' THEN '/brands/PHILIPKARTO/PHILIPKARTO_b.png'
+    WHEN name = 'PHILIPPE MODEL' THEN '/brands/PHILIPPEMODEL/PHILIPPEMODEL_b.png'
+    WHEN name = 'STONE ISLAND' THEN '/brands/STONEISLAND/STONEISLAND_b.png'
+    WHEN name = 'WHITE SAND' THEN '/brands/WHITESAND/WHITESAND_b.png'
+    WHEN name = 'ZADIG & VOLTAIRE' THEN '/brands/ZADIGVOLTAIRE/ZADIGVOLTAIRE_b.png'
+    ELSE REPLACE(REPLACE(logo_dark, ' ', ''), '&', '')
+END
+WHERE name IN (
+    'AFTER LABEL',
+    'ATELIER DE NIMES',
+    'AXEL ARIGATO',
+    'BISOUS SKATEBOARDS',
+    'CP COMPANY',
+    'DOLCE & GABBANA',
+    'GOLDEN GOOSE',
+    'MAISON LABICHE',
+    'NEW BALANCE',
+    'NORSE PROJECTS',
+    'PALM ANGELS',
+    'PHILIP KARTO',
+    'PHILIPPE MODEL',
+    'STONE ISLAND',
+    'WHITE SAND',
+    'ZADIG & VOLTAIRE'
+);
+
+-- Mise à jour des chemins pour les logos blancs
+UPDATE brands 
+SET logo_light = CASE
+    WHEN name = 'AFTER LABEL' THEN '/brands/AFTERLABEL/AFTERLABEL_w.png'
+    WHEN name = 'ATELIER DE NIMES' THEN '/brands/ATELIERDENIMES/ATELIERDENIMES_w.png'
+    WHEN name = 'AXEL ARIGATO' THEN '/brands/AXELARIGATO/AXELARIGATO_w.png'
+    WHEN name = 'BISOUS SKATEBOARDS' THEN '/brands/BISOUSSKATEBOARDS/BISOUSSKATEBOARDS_w.png'
+    WHEN name = 'CP COMPANY' THEN '/brands/CPCOMPANY/CPCOMPANY_w.png'
+    WHEN name = 'DOLCE & GABBANA' THEN '/brands/DOLCEGABBANA/DOLCEGABBANA_w.png'
+    WHEN name = 'GOLDEN GOOSE' THEN '/brands/GOLDENGOOSE/GOLDENGOOSE_w.png'
+    WHEN name = 'MAISON LABICHE' THEN '/brands/MAISONLABICHE/MAISONLABICHE_w.png'
+    WHEN name = 'NEW BALANCE' THEN '/brands/NEWBALANCE/NEWBALANCE_w.png'
+    WHEN name = 'NORSE PROJECTS' THEN '/brands/NORSEPROJECTS/NORSEPROJECTS_w.png'
+    WHEN name = 'PALM ANGELS' THEN '/brands/PALMANGELS/PALMANGELS_w.png'
+    WHEN name = 'PHILIP KARTO' THEN '/brands/PHILIPKARTO/PHILIPKARTO_w.png'
+    WHEN name = 'PHILIPPE MODEL' THEN '/brands/PHILIPPEMODEL/PHILIPPEMODEL_w.png'
+    WHEN name = 'STONE ISLAND' THEN '/brands/STONEISLAND/STONEISLAND_w.png'
+    WHEN name = 'WHITE SAND' THEN '/brands/WHITESAND/WHITESAND_w.png'
+    WHEN name = 'ZADIG & VOLTAIRE' THEN '/brands/ZADIGVOLTAIRE/ZADIGVOLTAIRE_w.png'
+    ELSE REPLACE(REPLACE(logo_light, ' ', ''), '&', '')
+END
+WHERE name IN (
+    'AFTER LABEL',
+    'ATELIER DE NIMES',
+    'AXEL ARIGATO',
+    'BISOUS SKATEBOARDS',
+    'CP COMPANY',
+    'DOLCE & GABBANA',
+    'GOLDEN GOOSE',
+    'MAISON LABICHE',
+    'NEW BALANCE',
+    'NORSE PROJECTS',
+    'PALM ANGELS',
+    'PHILIP KARTO',
+    'PHILIPPE MODEL',
+    'STONE ISLAND',
+    'WHITE SAND',
+    'ZADIG & VOLTAIRE'
+);
+
+-- Mise à jour générale pour toutes les marques
+UPDATE brands 
+SET logo_light = CONCAT('/brands/', REPLACE(UPPER(name), ' ', ''), '/', REPLACE(UPPER(name), ' ', ''), '_w.png'),
+    logo_dark = CONCAT('/brands/', REPLACE(UPPER(name), ' ', ''), '/', REPLACE(UPPER(name), ' ', ''), '_b.png')
+WHERE 1=1; 

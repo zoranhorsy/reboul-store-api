@@ -111,10 +111,8 @@ app.use('/brands', express.static(brandsDir, {
     maxAge: '1h',
     etag: true,
     lastModified: true,
-    setHeaders: (res, path) => {
-        console.log(`Serving brand image: ${path}`);
-        console.log(`Full path: ${path.join(brandsDir, path)}`);
-        console.log(`File exists: ${fs.existsSync(path)}`);
+    setHeaders: (res, filePath) => {
+        console.log(`Image de marque accédée: ${filePath}`);
         res.setHeader('Cache-Control', 'public, max-age=3600');
         res.setHeader('Access-Control-Allow-Origin', '*');
     }
@@ -125,8 +123,8 @@ app.use('/brands', express.static(brandsDir, {
     maxAge: '1h',
     etag: true,
     lastModified: true,
-    setHeaders: (res, path) => {
-        console.log(`Image de marque accédée: ${path}`);
+    setHeaders: (res, filePath) => {
+        console.log(`Image de marque accédée: ${filePath}`);
         res.setHeader('Cache-Control', 'public, max-age=3600');
         res.setHeader('Access-Control-Allow-Origin', '*');
     }
