@@ -50,6 +50,8 @@ UPDATE brands SET
 WHERE name = 'CHLOE';
 
 UPDATE brands SET 
+    logo_light = '/brands/DOUCALS/doucals_b.png',
+    logo_dark = '/brands/DOUCALS/doucals_w.png'
     logo_light = '/brands/DOUCALS/D&G_b.png',
     logo_dark = '/brands/DOUCALS/D&G_w.png'
 WHERE name = 'DOUCAL''S';
