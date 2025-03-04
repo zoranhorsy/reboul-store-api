@@ -93,27 +93,48 @@ const validate = (validations) => {
             async (req, res, next) => {
                 const { email, password } = req.body;
                 try {
-                    console.log('Tentative de connexion pour:', email);
+                    console.log('=== DÉBUT LOGIN ===');
+                    console.log('Email reçu:', email);
+                    console.log('Headers:', req.headers);
+
                     const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+                    console.log('Résultat requête:', rows.length > 0 ? '✅ Utilisateur trouvé' : '❌ Utilisateur non trouvé');
+                    
                     if (rows.length === 0) {
-                        console.log('Aucun utilisateur trouvé pour:', email);
-                        return next(new AppError('Email ou mot de passe incorrect', 401));
+                        console.log('❌ Authentification échouée: utilisateur non trouvé');
+                        return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
                     }
+
                     const user = rows[0];
-                    console.log('Utilisateur trouvé:', user.username);
+                    console.log('Données utilisateur:', {
+                        id: user.id,
+                        email: user.email,
+                        isAdmin: user.is_admin
+                    });
+
                     const isPasswordValid = await bcrypt.compare(password, user.password_hash);
+                    console.log('Mot de passe valide:', isPasswordValid ? '✅' : '❌');
+
                     if (!isPasswordValid) {
-                        console.log('Mot de passe invalide pour:', email);
-                        return next(new AppError('Email ou mot de passe incorrect', 401));
+                        console.log('❌ Authentification échouée: mot de passe invalide');
+                        return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
                     }
-                    console.log('Mot de passe valide pour:', email);
+
+                    const tokenPayload = {
+                        userId: user.id,
+                        username: user.username,
+                        isAdmin: user.is_admin
+                    };
+                    console.log('Payload du token:', tokenPayload);
+
                     const token = jwt.sign(
-                        { userId: user.id, username: user.username, isAdmin: user.is_admin },
+                        tokenPayload,
                         process.env.JWT_SECRET,
                         { expiresIn: '1h' }
                     );
-                    console.log('Token généré pour:', email);
-                    res.json({
+                    console.log('Token généré:', token.substring(0, 20) + '...');
+
+                    const response = {
                         message: 'Connexion réussie',
                         token,
                         user: {
@@ -122,23 +143,38 @@ const validate = (validations) => {
                             username: user.username,
                             is_admin: user.is_admin
                         }
-                    });
+                    };
+                    console.log('=== FIN LOGIN - SUCCÈS ===');
+                    res.json(response);
                 } catch (err) {
-                    console.error('Erreur lors de la connexion:', err);
+                    console.error('❌ Erreur login:', err);
                     next(new AppError('Erreur lors de la connexion', 500));
                 }
             });
 
         router.get('/me', authMiddleware, async (req, res) => {
             try {
-                const user = await getUserById(req.user.userId);
-                res.json({
+                console.log('=== DÉBUT /auth/me ===');
+                console.log('Utilisateur authentifié:', req.user);
+                
+                const user = await getUserById(req.user.id);
+                console.log('Données utilisateur complètes:', user);
+                
+                const response = {
                     id: user.id,
                     email: user.email,
                     username: user.username,
-                    is_admin: user.is_admin
-                });
+                    is_admin: user.is_admin,
+                    avatar_url: user.avatar_url,
+                    phone: user.phone
+                };
+                
+                console.log('Réponse envoyée:', response);
+                console.log('=== FIN /auth/me ===');
+                
+                res.json(response);
             } catch (error) {
+                console.error('Erreur /me:', error);
                 res.status(500).json({ message: 'Erreur lors de la récupération des informations utilisateur' });
             }
         });
