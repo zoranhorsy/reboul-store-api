@@ -2,6 +2,7 @@ const pool = require("../db")
 const { AppError } = require("../middleware/errorHandler")
 const path = require("path")
 const fs = require("fs").promises
+const { uploadToCloudinary, deleteFromCloudinary } = require('../utils/cloudinary');
 
 // Fonction utilitaire pour parser les champs JSON
 const parseJsonField = (field, value) => {
@@ -120,10 +121,10 @@ class ProductController {
 
   // Créer un nouveau produit
   static async createProduct(data, files) {
-    const insertFields = ProductController._prepareProductData(data, files)
+    const productData = await ProductController._prepareProductData(data, files)
     
-    const keys = Object.keys(insertFields)
-    const values = Object.values(insertFields)
+    const keys = Object.keys(productData)
+    const values = Object.values(productData)
     const placeholders = keys.map((_, index) => `$${index + 1}`).join(", ")
 
     const query = `
@@ -138,7 +139,7 @@ class ProductController {
 
   // Mettre à jour un produit
   static async updateProduct(id, data, files) {
-    const updateFields = ProductController._prepareProductData(data, files)
+    const updateFields = await ProductController._prepareProductData(data, files)
     
     const setClause = Object.keys(updateFields)
       .map((key, index) => {
@@ -196,15 +197,29 @@ class ProductController {
   }
 
   // Méthodes privées utilitaires rendues statiques
-  static _prepareProductData(data, files) {
+  static async _prepareProductData(data, files) {
     const productData = { ...data }
     
+    // Gestion des images avec Cloudinary
     if (files) {
-      if (files["image_url"]) {
-        productData.image_url = "/uploads/" + files["image_url"][0].filename
-      }
-      if (files["images"]) {
-        productData.images = JSON.stringify(files["images"].map(file => "/uploads/" + file.filename))
+      try {
+        const uploadedImages = await ProductController.handleProductImages(files);
+        
+        if (uploadedImages.length > 0) {
+          if (files["image_url"]) {
+            productData.image_url = uploadedImages[0].url;
+          }
+          if (files["images"]) {
+            productData.images = JSON.stringify(
+              uploadedImages
+                .slice(files["image_url"] ? 1 : 0)
+                .map(img => img.url)
+            );
+          }
+        }
+      } catch (error) {
+        console.error('Erreur lors de l\'upload des images:', error);
+        throw new AppError('Erreur lors de l\'upload des images', 500);
       }
     }
 
@@ -222,7 +237,7 @@ class ProductController {
       if (productData[field] && !jsonFields.includes(field)) {
         if (Array.isArray(productData[field])) {
           productData[field] = `{${productData[field].join(",")}}`
-        } else if (typeof productData[field] === "string") {
+        } else if (typeof productData[field] === "string" && field !== "images") {
           productData[field] = `{${productData[field]}}`
         }
       }
@@ -248,6 +263,32 @@ class ProductController {
       const imagePath = path.join(__dirname, "..", "public", image)
       await fs.unlink(imagePath).catch(err => console.error("Erreur lors de la suppression d'une image:", err))
     }
+  }
+
+  static async handleProductImages(files) {
+    console.log('Début handleProductImages');
+    console.log('Files reçus:', files);
+    
+    const uploadedImages = [];
+    
+    if (files["image_url"]) {
+      console.log('Uploading main image:', files["image_url"][0]);
+      const mainImage = await uploadToCloudinary(files["image_url"][0]);
+      console.log('Main image uploaded:', mainImage);
+      uploadedImages.push(mainImage);
+    }
+    
+    if (files["images"]) {
+      console.log('Uploading additional images');
+      for (const file of files["images"]) {
+        const result = await uploadToCloudinary(file);
+        console.log('Additional image uploaded:', result);
+        uploadedImages.push(result);
+      }
+    }
+    
+    console.log('Images uploadées:', uploadedImages);
+    return uploadedImages;
   }
 }
 
