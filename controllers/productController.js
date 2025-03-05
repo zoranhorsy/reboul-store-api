@@ -163,6 +163,10 @@ class ProductController {
     if (result.rows.length === 0) {
       throw new AppError("Produit non trouvé", 404)
     }
+
+    // Appeler fixProductImages après la mise à jour
+    await ProductController.fixProductImages(id);
+
     return result.rows[0]
   }
 
@@ -206,20 +210,68 @@ class ProductController {
         const uploadedImages = await ProductController.handleProductImages(files);
         
         if (uploadedImages.length > 0) {
-          if (files["image_url"]) {
-            productData.image_url = uploadedImages[0].url;
-          }
-          if (files["images"]) {
-            productData.images = JSON.stringify(
-              uploadedImages
-                .slice(files["image_url"] ? 1 : 0)
-                .map(img => img.url)
-            );
-          }
+          // Toujours utiliser la première image uploadée comme image_url
+          productData.image_url = uploadedImages[0].url;
+          
+          // Stocker toutes les URLs des images dans le tableau images
+          const imageUrls = uploadedImages.map(img => img.url);
+          productData.images = JSON.stringify(imageUrls);
+          
+          console.log('Images préparées:', {
+            image_url: productData.image_url,
+            images: imageUrls
+          });
         }
       } catch (error) {
         console.error('Erreur lors de l\'upload des images:', error);
         throw new AppError('Erreur lors de l\'upload des images', 500);
+      }
+    } else if (data.images) {
+      // Si pas de nouveaux fichiers mais des URLs d'images existantes
+      let images = [];
+      
+      // Parser les images si c'est une chaîne JSON ou une chaîne avec des URLs séparées par des virgules
+      if (typeof data.images === 'string') {
+        try {
+          // Essayer d'abord de parser comme JSON
+          images = JSON.parse(data.images);
+        } catch (error) {
+          // Si ce n'est pas du JSON valide, essayer de splitter sur les virgules
+          images = data.images.split(',').map(url => url.trim());
+        }
+      } else if (Array.isArray(data.images)) {
+        images = data.images;
+      }
+      
+      // Filtrer pour ne garder que les URLs Cloudinary valides
+      const cloudinaryImages = images.filter(img => 
+        typeof img === 'string' && 
+        img.includes('cloudinary.com')
+      );
+      
+      if (cloudinaryImages.length > 0) {
+        // Toujours utiliser la première image Cloudinary comme image_url
+        productData.image_url = cloudinaryImages[0];
+        // Stocker toutes les URLs Cloudinary
+        productData.images = JSON.stringify(cloudinaryImages);
+        
+        console.log('Images existantes mises à jour:', {
+          image_url: productData.image_url,
+          images: cloudinaryImages
+        });
+      }
+    }
+
+    // Vérifier que image_url est bien une URL Cloudinary
+    if (productData.image_url && !productData.image_url.includes('cloudinary.com')) {
+      // Si image_url n'est pas une URL Cloudinary mais qu'on a des images Cloudinary
+      const images = typeof productData.images === 'string' 
+        ? JSON.parse(productData.images) 
+        : (Array.isArray(productData.images) ? productData.images : []);
+      
+      if (images.length > 0 && typeof images[0] === 'string' && images[0].includes('cloudinary.com')) {
+        productData.image_url = images[0];
+        console.log('image_url corrigée avec la première image Cloudinary:', productData.image_url);
       }
     }
 
@@ -247,21 +299,36 @@ class ProductController {
   }
 
   static async _deleteProductImages(product) {
-    if (product.image_url) {
-      const imagePath = path.join(__dirname, "..", "public", product.image_url)
-      await fs.unlink(imagePath).catch(err => console.error("Erreur lors de la suppression de l'image principale:", err))
-    }
-
-    let images = []
     try {
-      images = JSON.parse(product.images || "[]")
-    } catch (error) {
-      console.error("Erreur lors du parsing des images:", error)
-    }
+        // Extraire le public_id de l'URL Cloudinary de l'image principale
+        if (product.image_url && product.image_url.includes('cloudinary.com')) {
+            const publicId = product.image_url.split('/').slice(-1)[0].split('.')[0];
+            await deleteFromCloudinary(`reboul-store/products/${publicId}`);
+            console.log('Image principale supprimée de Cloudinary:', publicId);
+        }
 
-    for (const image of images) {
-      const imagePath = path.join(__dirname, "..", "public", image)
-      await fs.unlink(imagePath).catch(err => console.error("Erreur lors de la suppression d'une image:", err))
+        // Supprimer les images additionnelles
+        let images = [];
+        try {
+            images = typeof product.images === 'string' 
+                ? JSON.parse(product.images) 
+                : (Array.isArray(product.images) ? product.images : []);
+        } catch (error) {
+            console.error("Erreur lors du parsing des images:", error);
+            images = [];
+        }
+
+        // Supprimer chaque image de Cloudinary
+        for (const imageUrl of images) {
+            if (typeof imageUrl === 'string' && imageUrl.includes('cloudinary.com')) {
+                const publicId = imageUrl.split('/').slice(-1)[0].split('.')[0];
+                await deleteFromCloudinary(`reboul-store/products/${publicId}`);
+                console.log('Image supprimée de Cloudinary:', publicId);
+            }
+        }
+    } catch (error) {
+        console.error("Erreur lors de la suppression des images:", error);
+        throw new AppError('Erreur lors de la suppression des images', 500);
     }
   }
 
@@ -271,24 +338,119 @@ class ProductController {
     
     const uploadedImages = [];
     
-    if (files["image_url"]) {
-      console.log('Uploading main image:', files["image_url"][0]);
-      const mainImage = await uploadToCloudinary(files["image_url"][0]);
-      console.log('Main image uploaded:', mainImage);
-      uploadedImages.push(mainImage);
+    try {
+        // Si on a une image principale, on l'upload en premier
+        if (files["image_url"] && files["image_url"][0]) {
+            console.log('Uploading main image:', files["image_url"][0]);
+            const mainImage = await uploadToCloudinary(files["image_url"][0]);
+            console.log('Main image uploaded:', mainImage);
+            if (!mainImage || !mainImage.url) {
+                throw new Error('Échec de l\'upload de l\'image principale');
+            }
+            uploadedImages.push(mainImage);
+        }
+        
+        // Upload des images additionnelles
+        if (files["images"]) {
+            console.log('Uploading additional images');
+            for (const file of files["images"]) {
+                const result = await uploadToCloudinary(file);
+                console.log('Additional image uploaded:', result);
+                if (result && result.url) {
+                    uploadedImages.push(result);
+                } else {
+                    console.error('Échec de l\'upload d\'une image additionnelle');
+                }
+            }
+        }
+        
+        // Vérifier qu'on a au moins une image
+        if (uploadedImages.length === 0) {
+            throw new Error('Aucune image n\'a été uploadée avec succès');
+        }
+        
+        // Si on n'a pas d'image principale mais qu'on a des images additionnelles,
+        // on utilise la première image additionnelle comme image principale
+        if (!files["image_url"] && uploadedImages.length > 0) {
+            console.log('Using first additional image as main image');
+            const [firstImage, ...restImages] = uploadedImages;
+            return [firstImage, ...restImages];
+        }
+        
+        console.log('Images uploadées:', uploadedImages);
+        return uploadedImages;
+    } catch (error) {
+        console.error('Erreur lors de l\'upload des images:', error);
+        // Si une erreur survient, essayer de supprimer les images déjà uploadées
+        for (const image of uploadedImages) {
+            if (image && image.public_id) {
+                try {
+                    await deleteFromCloudinary(image.public_id);
+                    console.log('Image supprimée après erreur:', image.public_id);
+                } catch (deleteError) {
+                    console.error('Erreur lors de la suppression de l\'image après erreur:', deleteError);
+                }
+            }
+        }
+        throw error;
     }
-    
-    if (files["images"]) {
-      console.log('Uploading additional images');
-      for (const file of files["images"]) {
-        const result = await uploadToCloudinary(file);
-        console.log('Additional image uploaded:', result);
-        uploadedImages.push(result);
-      }
+  }
+
+  // Ajouter cette nouvelle méthode avant updateProduct
+  static async fixProductImages(id) {
+    try {
+        // 1. Récupérer le produit actuel
+        const { rows } = await pool.query("SELECT images, image_url FROM products WHERE id = $1", [id]);
+        if (rows.length === 0) {
+            throw new AppError("Produit non trouvé", 404);
+        }
+        
+        const product = rows[0];
+        let needsUpdate = false;
+        let images = [];
+        let image_url = product.image_url;
+
+        // 2. Parser et vérifier les images
+        try {
+            images = typeof product.images === 'string' 
+                ? JSON.parse(product.images)
+                : (Array.isArray(product.images) ? product.images : []);
+        } catch (error) {
+            console.error("Erreur lors du parsing des images:", error);
+            images = [];
+        }
+
+        // 3. Filtrer pour ne garder que les URLs Cloudinary valides
+        const cloudinaryImages = images.filter(img => 
+            typeof img === 'string' && 
+            img.includes('cloudinary.com')
+        );
+
+        // 4. Mettre à jour image_url si nécessaire
+        if (cloudinaryImages.length > 0) {
+            if (!image_url || !image_url.includes('cloudinary.com')) {
+                image_url = cloudinaryImages[0];
+                needsUpdate = true;
+            }
+        }
+
+        // 5. Mettre à jour la base de données si nécessaire
+        if (needsUpdate) {
+            await pool.query(
+                "UPDATE products SET image_url = $1, images = $2 WHERE id = $3",
+                [image_url, JSON.stringify(cloudinaryImages), id]
+            );
+            console.log(`Images corrigées pour le produit ${id}:`, {
+                image_url,
+                images: cloudinaryImages
+            });
+        }
+
+        return { image_url, images: cloudinaryImages };
+    } catch (error) {
+        console.error("Erreur lors de la correction des images:", error);
+        throw error;
     }
-    
-    console.log('Images uploadées:', uploadedImages);
-    return uploadedImages;
   }
 }
 

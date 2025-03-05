@@ -137,6 +137,25 @@ router.delete(
   }
 )
 
+// POST pour corriger les images d'un produit
+router.post(
+  "/:id/fix-images",
+  authMiddleware,
+  param("id").isInt().withMessage("L'ID du produit doit être un nombre entier"),
+  validateRequest,
+  async (req, res, next) => {
+    try {
+      const result = await ProductController.fixProductImages(req.params.id)
+      res.json({
+        message: "Images du produit corrigées avec succès",
+        ...result
+      })
+    } catch (err) {
+      next(err)
+    }
+  }
+)
+
 // À la fin du fichier, après toutes les routes
 router.use((err, req, res, next) => {
   console.error(err)
