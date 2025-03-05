@@ -452,6 +452,52 @@ class ProductController {
         throw error;
     }
   }
+
+  // Méthode pour corriger les images de tous les produits
+  static async fixAllProductImages() {
+    try {
+      // 1. Récupérer tous les produits qui ont besoin d'être corrigés
+      const { rows: products } = await pool.query(
+        "SELECT id, images, image_url FROM products WHERE image_url NOT LIKE '%cloudinary.com%' AND images IS NOT NULL"
+      );
+
+      console.log(`${products.length} produits à corriger trouvés`);
+
+      const results = {
+        success: [],
+        errors: []
+      };
+
+      // 2. Pour chaque produit, corriger les images
+      for (const product of products) {
+        try {
+          const result = await ProductController.fixProductImages(product.id);
+          results.success.push({
+            id: product.id,
+            old_image_url: product.image_url,
+            new_image_url: result.image_url
+          });
+        } catch (error) {
+          console.error(`Erreur lors de la correction du produit ${product.id}:`, error);
+          results.errors.push({
+            id: product.id,
+            error: error.message
+          });
+        }
+      }
+
+      return {
+        message: "Correction des images terminée",
+        total_products: products.length,
+        corrected: results.success.length,
+        failed: results.errors.length,
+        details: results
+      };
+    } catch (error) {
+      console.error("Erreur lors de la correction des images:", error);
+      throw new AppError("Erreur lors de la correction des images", 500);
+    }
+  }
 }
 
 module.exports = { ProductController } 

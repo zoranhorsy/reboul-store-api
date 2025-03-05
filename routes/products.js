@@ -137,6 +137,20 @@ router.delete(
   }
 )
 
+// POST pour corriger les images de tous les produits
+router.post(
+  "/fix-all-images",
+  authMiddleware,
+  async (req, res, next) => {
+    try {
+      const result = await ProductController.fixAllProductImages();
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
 // POST pour corriger les images d'un produit
 router.post(
   "/:id/fix-images",
