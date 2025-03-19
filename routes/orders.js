@@ -122,6 +122,9 @@ router.post('/',
 
             // Vérifier le stock et calculer le montant total
             for (const item of items) {
+                console.log('Vérification du produit:', item.product_id);
+                console.log('Variant demandé:', item.variant);
+
                 // Verrouiller la ligne du produit pour éviter les conflits
                 const { rows } = await client.query(
                     'SELECT price, variants FROM products WHERE id = $1 FOR UPDATE',
@@ -129,10 +132,16 @@ router.post('/',
                 );
                 
                 if (rows.length === 0) {
+                    console.error('Produit non trouvé:', item.product_id);
                     throw new AppError(`Produit avec l'ID ${item.product_id} non trouvé`, 404);
                 }
 
                 const product = rows[0];
+                console.log('Produit trouvé:', {
+                    id: item.product_id,
+                    price: product.price,
+                    variants: product.variants
+                });
                 
                 // Trouver le variant correspondant
                 const variant = product.variants.find(
@@ -140,14 +149,28 @@ router.post('/',
                 );
 
                 if (!variant) {
+                    console.error('Variant non trouvé:', {
+                        productId: item.product_id,
+                        requestedSize: item.variant.size,
+                        requestedColor: item.variant.color,
+                        availableVariants: product.variants
+                    });
                     throw new AppError(
                         `Variant non trouvé pour le produit ${item.product_id} (taille: ${item.variant.size}, couleur: ${item.variant.color})`,
                         404
                     );
                 }
 
+                console.log('Variant trouvé:', variant);
+
                 // Vérification du stock du variant
                 if (variant.stock < item.quantity) {
+                    console.error('Stock insuffisant:', {
+                        productId: item.product_id,
+                        variant: variant,
+                        requestedQuantity: item.quantity,
+                        availableStock: variant.stock
+                    });
                     throw new AppError(
                         `Stock insuffisant pour le produit ${item.product_id} (${item.variant.color} - ${item.variant.size}). ` +
                         `Stock disponible: ${variant.stock}, Quantité demandée: ${item.quantity}`,
