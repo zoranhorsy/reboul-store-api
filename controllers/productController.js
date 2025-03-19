@@ -214,13 +214,7 @@ class ProductController {
           productData.image_url = uploadedImages[0].url;
           
           // Stocker toutes les URLs des images dans le tableau images
-          const imageUrls = uploadedImages.map(img => img.url);
-          productData.images = imageUrls;
-          
-          console.log('Images préparées:', {
-            image_url: productData.image_url,
-            images: imageUrls
-          });
+          productData.images = uploadedImages.map(img => img.url);
         }
       } catch (error) {
         console.error('Erreur lors de l\'upload des images:', error);
@@ -256,24 +250,7 @@ class ProductController {
       if (cloudinaryImages.length > 0) {
         // Toujours utiliser la première image comme image_url
         productData.image_url = cloudinaryImages[0];
-        // Stocker les URLs Cloudinary directement comme un tableau
         productData.images = cloudinaryImages;
-        
-        console.log('Images existantes mises à jour:', {
-          image_url: productData.image_url,
-          images: cloudinaryImages
-        });
-      }
-    }
-
-    // Vérifier que image_url est bien une URL Cloudinary
-    if (productData.image_url && !productData.image_url.includes('cloudinary.com')) {
-      // Si image_url n'est pas une URL Cloudinary mais qu'on a des images Cloudinary
-      const images = Array.isArray(productData.images) ? productData.images : [];
-      
-      if (images.length > 0 && typeof images[0] === 'string' && images[0].includes('cloudinary.com')) {
-        productData.image_url = images[0];
-        console.log('image_url corrigée avec la première image Cloudinary:', productData.image_url);
       }
     }
 
@@ -292,13 +269,6 @@ class ProductController {
         productData[field] = JSON.stringify(productData[field]);
       }
     });
-
-    // Convertir le tableau d'images en format PostgreSQL
-    if (productData.images) {
-      if (Array.isArray(productData.images)) {
-        productData.images = JSON.stringify(productData.images);
-      }
-    }
 
     return productData;
   }
