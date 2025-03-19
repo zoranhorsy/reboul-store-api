@@ -208,8 +208,8 @@ router.post('/',
             // Créer les items de la commande avec les informations de variant
             for (const item of items) {
                 await client.query(
-                    'INSERT INTO order_items (order_id, product_id, quantity, price, variant_info) VALUES ($1, $2, $3, (SELECT price FROM products WHERE id = $2), $4)',
-                    [orderId, item.product_id, item.quantity, JSON.stringify(item.variant)]
+                    'INSERT INTO order_items (order_id, product_id, product_name, quantity, price, variant_info) VALUES ($1, $2, $3, $4, (SELECT price FROM products WHERE id = $2), $5)',
+                    [orderId, item.product_id, item.product_name, item.quantity, JSON.stringify(item.variant)]
                 );
             }
 
