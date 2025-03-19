@@ -145,7 +145,8 @@ router.post('/',
                 
                 // Trouver le variant correspondant
                 const variant = product.variants.find(
-                    v => v.size === item.variant.size && v.color === item.variant.color
+                    v => String(v.size) === String(item.variant.size) && 
+                         String(v.color).toLowerCase() === String(item.variant.color).toLowerCase()
                 );
 
                 if (!variant) {
@@ -153,7 +154,9 @@ router.post('/',
                         productId: item.product_id,
                         requestedSize: item.variant.size,
                         requestedColor: item.variant.color,
-                        availableVariants: product.variants
+                        availableVariants: product.variants,
+                        sizeType: typeof item.variant.size,
+                        colorType: typeof item.variant.color
                     });
                     throw new AppError(
                         `Variant non trouvé pour le produit ${item.product_id} (taille: ${item.variant.size}, couleur: ${item.variant.color})`,
