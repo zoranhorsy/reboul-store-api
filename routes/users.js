@@ -618,4 +618,38 @@ router.delete('/addresses/:id', authMiddleware, async (req, res) => {
     }
 });
 
+// Endpoint pour mettre à jour le rôle d'un utilisateur (admin seulement)
+router.put('/:id/role', authMiddleware, async (req, res, next) => {
+    try {
+        // Vérifier si l'utilisateur est admin
+        if (!req.user.isAdmin) {
+            return next(new AppError('Accès non autorisé', 403));
+        }
+
+        const { id } = req.params;
+        const { is_admin } = req.body;
+
+        // Vérifier si le paramètre is_admin est présent et est un booléen
+        if (typeof is_admin !== 'boolean') {
+            return next(new AppError('Le paramètre is_admin doit être un booléen', 400));
+        }
+
+        // Mettre à jour le rôle de l'utilisateur
+        const { rows } = await pool.query(
+            'UPDATE users SET is_admin = $1 WHERE id = $2 RETURNING id, username, email, is_admin',
+            [is_admin, id]
+        );
+
+        if (rows.length === 0) {
+            return next(new AppError('Utilisateur non trouvé', 404));
+        }
+
+        // Retourner l'utilisateur mis à jour
+        res.json(rows[0]);
+    } catch (err) {
+        console.error('Erreur lors de la mise à jour du rôle:', err);
+        next(new AppError('Erreur lors de la mise à jour du rôle utilisateur', 500));
+    }
+});
+
 module.exports = router;
