@@ -309,7 +309,26 @@ const validate = (validations) => {
                     res.json({ message: 'Si cette adresse email est associée à un compte, vous recevrez un email avec les instructions pour réinitialiser votre mot de passe.' });
                 } catch (err) {
                     console.error('❌ Erreur lors de la demande de réinitialisation:', err);
-                    next(new AppError('Erreur lors de la demande de réinitialisation de mot de passe', 500));
+                    
+                    // Pour le débogage, inclure les détails de l'erreur dans la réponse
+                    return res.status(500).json({ 
+                        status: 'error', 
+                        message: 'Erreur lors de la demande de réinitialisation de mot de passe',
+                        debug: process.env.NODE_ENV !== 'production' ? {
+                            error: err.message,
+                            stack: err.stack,
+                            smtpConfig: {
+                                host: process.env.SMTP_HOST,
+                                port: process.env.SMTP_PORT,
+                                secure: process.env.SMTP_SECURE,
+                                user: process.env.SMTP_USER,
+                                // Ne pas inclure le mot de passe pour des raisons de sécurité
+                            }
+                        } : undefined
+                    });
+                    
+                    // Commenté pour le moment pour permettre le débogage
+                    // next(new AppError('Erreur lors de la demande de réinitialisation de mot de passe', 500));
                 }
             }
         );
