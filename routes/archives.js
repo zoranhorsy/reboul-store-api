@@ -1,24 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 const archiveController = require('../controllers/archiveController');
-
-// Configuration de multer pour le stockage en mémoire
-const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: {
-        fileSize: 5 * 1024 * 1024, // Limite de 5MB
-    },
-    fileFilter: (req, file, cb) => {
-        if (file.mimetype.startsWith('image/')) {
-            cb(null, true);
-        } else {
-            cb(new Error('Le fichier doit être une image'), false);
-        }
-    },
-});
 
 // Routes publiques
 router.get('/', async (req, res) => {
@@ -39,13 +23,10 @@ router.get('/', async (req, res) => {
     }
 });
 
-// Routes admin (protégées)
-router.use(authMiddleware);
-
-// Routes admin
-router.get('/all', archiveController.getAllArchives);
-router.post('/', upload.single('image'), archiveController.createArchive);
-router.put('/:id', upload.single('image'), archiveController.updateArchive);
-router.delete('/:id', archiveController.deleteArchive);
+// Routes protégées (admin)
+router.get('/admin', authMiddleware, archiveController.getAllArchives);
+router.post('/', authMiddleware, archiveController.createArchive);
+router.put('/:id', authMiddleware, archiveController.updateArchive);
+router.delete('/:id', authMiddleware, archiveController.deleteArchive);
 
 module.exports = router; 

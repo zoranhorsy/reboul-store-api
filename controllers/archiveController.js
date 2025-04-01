@@ -63,22 +63,7 @@ exports.createArchive = async (req, res) => {
             });
         }
 
-        const { title, description, category, date, active } = req.body;
-        let image_path = null;
-
-        if (req.file) {
-            const imageFolder = `/archives/${category}`;
-            const publicPath = path.join(process.cwd(), 'public', imageFolder);
-            await fs.mkdir(publicPath, { recursive: true });
-            
-            const fileName = `${Date.now()}-${req.file.originalname}`;
-            image_path = `${imageFolder}/${fileName}`;
-            
-            await fs.writeFile(
-                path.join(process.cwd(), 'public', image_path),
-                req.file.buffer
-            );
-        }
+        const { title, description, category, date, active, image_path } = req.body;
 
         const result = await db.query(
             `INSERT INTO archives (title, description, category, image_path, date, active)
@@ -111,34 +96,7 @@ exports.updateArchive = async (req, res) => {
         }
 
         const { id } = req.params;
-        const { title, description, category, date, active } = req.body;
-        let image_path = null;
-
-        if (req.file) {
-            // Supprimer l'ancienne image si elle existe
-            const oldImage = await db.query(
-                'SELECT image_path FROM archives WHERE id = $1',
-                [id]
-            );
-            
-            if (oldImage.rows[0]?.image_path) {
-                const oldPath = path.join(process.cwd(), 'public', oldImage.rows[0].image_path);
-                await fs.unlink(oldPath).catch(() => {});
-            }
-
-            // Sauvegarder la nouvelle image
-            const imageFolder = `/archives/${category}`;
-            const publicPath = path.join(process.cwd(), 'public', imageFolder);
-            await fs.mkdir(publicPath, { recursive: true });
-            
-            const fileName = `${Date.now()}-${req.file.originalname}`;
-            image_path = `${imageFolder}/${fileName}`;
-            
-            await fs.writeFile(
-                path.join(process.cwd(), 'public', image_path),
-                req.file.buffer
-            );
-        }
+        const { title, description, category, date, active, image_path } = req.body;
 
         const result = await db.query(
             `UPDATE archives 
