@@ -61,24 +61,48 @@ exports.createArchive = async (req, res) => {
             });
         }
 
+        console.log('Données reçues pour la création:', req.body);
+        console.log('Headers:', req.headers);
+
         const { title, description, category, date, active, image_path } = req.body;
 
+        // Vérifier que tous les champs requis sont présents
+        if (!title || !description || !category || !date || !image_path) {
+            console.error('Champs manquants:', { title, description, category, date, image_path });
+            return res.status(400).json({
+                status: 'error',
+                message: 'Tous les champs sont requis'
+            });
+        }
+
+        console.log('Tentative d\'insertion avec les valeurs:', {
+            title,
+            description,
+            category,
+            date,
+            active,
+            image_path
+        });
+
         const result = await db.query(
-            `INSERT INTO archives (title, description, category, image_path, date, active)
+            `INSERT INTO archives (title, description, category, date, active, image_path)
              VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING *`,
-            [title, description, category, image_path, date, active]
+            [title, description, category, date, active, image_path]
         );
+
+        console.log('Archive créée avec succès:', result.rows[0]);
 
         res.status(201).json({
             status: 'success',
             data: result.rows[0]
         });
     } catch (error) {
-        console.error('Erreur lors de la création de l\'archive:', error);
+        console.error('Erreur détaillée lors de la création de l\'archive:', error);
         res.status(500).json({
             status: 'error',
-            message: 'Erreur lors de la création de l\'archive'
+            message: 'Erreur lors de la création de l\'archive',
+            error: error.message
         });
     }
 };
