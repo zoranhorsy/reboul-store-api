@@ -64,14 +64,14 @@ exports.createArchive = async (req, res) => {
         console.log('Données reçues pour la création:', req.body);
         console.log('Headers:', req.headers);
 
-        const { title, description, category, date, active, image_path } = req.body;
+        const { title, description, category, date, active, image_paths } = req.body;
 
         // Vérifier que tous les champs requis sont présents
-        if (!title || !description || !category || !date || !image_path) {
-            console.error('Champs manquants:', { title, description, category, date, image_path });
+        if (!title || !description || !category || !date || !image_paths || !Array.isArray(image_paths)) {
+            console.error('Champs manquants ou invalides:', { title, description, category, date, image_paths });
             return res.status(400).json({
                 status: 'error',
-                message: 'Tous les champs sont requis'
+                message: 'Tous les champs sont requis et image_paths doit être un tableau'
             });
         }
 
@@ -81,14 +81,14 @@ exports.createArchive = async (req, res) => {
             category,
             date,
             active,
-            image_path
+            image_paths
         });
 
         const result = await db.query(
-            `INSERT INTO archives (title, description, category, date, active, image_path)
+            `INSERT INTO archives (title, description, category, date, active, image_paths)
              VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING *`,
-            [title, description, category, date, active, image_path]
+            [title, description, category, date, active, image_paths]
         );
 
         console.log('Archive créée avec succès:', result.rows[0]);
@@ -118,19 +118,27 @@ exports.updateArchive = async (req, res) => {
         }
 
         const { id } = req.params;
-        const { title, description, category, date, active, image_path } = req.body;
+        const { title, description, category, date, active, image_paths } = req.body;
+
+        // Vérifier que image_paths est un tableau s'il est fourni
+        if (image_paths !== undefined && !Array.isArray(image_paths)) {
+            return res.status(400).json({
+                status: 'error',
+                message: 'image_paths doit être un tableau'
+            });
+        }
 
         const result = await db.query(
             `UPDATE archives 
              SET title = COALESCE($1, title),
                  description = COALESCE($2, description),
                  category = COALESCE($3, category),
-                 image_path = COALESCE($4, image_path),
+                 image_paths = COALESCE($4, image_paths),
                  date = COALESCE($5, date),
                  active = COALESCE($6, active)
              WHERE id = $7
              RETURNING *`,
-            [title, description, category, image_path, date, active, id]
+            [title, description, category, image_paths, date, active, id]
         );
 
         if (result.rows.length === 0) {
