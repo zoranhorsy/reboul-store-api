@@ -1,7 +1,5 @@
 const db = require('../db');
 const { AppError } = require('../middleware/errorHandler');
-const path = require('path');
-const fs = require('fs').promises;
 
 // Obtenir toutes les archives actives (pour l'affichage public)
 exports.getAllActiveArchives = async (req, res) => {
@@ -143,12 +141,6 @@ exports.deleteArchive = async (req, res) => {
 
         const { id } = req.params;
         
-        // Récupérer l'image avant la suppression
-        const image = await db.query(
-            'SELECT image_path FROM archives WHERE id = $1',
-            [id]
-        );
-
         // Supprimer l'archive de la base de données
         const result = await db.query(
             'DELETE FROM archives WHERE id = $1 RETURNING *',
@@ -160,12 +152,6 @@ exports.deleteArchive = async (req, res) => {
                 status: 'error',
                 message: 'Archive non trouvée'
             });
-        }
-
-        // Supprimer l'image du système de fichiers
-        if (image.rows[0]?.image_path) {
-            const imagePath = path.join(process.cwd(), 'public', image.rows[0].image_path);
-            await fs.unlink(imagePath).catch(() => {});
         }
 
         res.json({
