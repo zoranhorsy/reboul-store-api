@@ -21,7 +21,7 @@ class ProductController {
   // Récupérer tous les produits avec filtrage
   static async getAllProducts(req) {
     const page = Number.parseInt(req.query.page) || 1
-    const limit = Number.parseInt(req.query.limit) || 10
+    const limit = Number.parseInt(req.query.limit) || 50
     const offset = (page - 1) * limit
 
     const queryParams = []
