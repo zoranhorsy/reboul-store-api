@@ -24,6 +24,7 @@ router.get(
     query("limit").optional().isInt({ min: 1, max: 100 }).withMessage("La limite doit être entre 1 et 100"),
     query("category_id").optional().isInt().withMessage("category_id doit être un nombre entier"),
     query("brand").optional().isString(),
+    query("brand_id").optional().isInt().withMessage("brand_id doit être un nombre entier"),
     query("minPrice").optional().isFloat({ min: 0 }).withMessage("Le prix minimum doit être un nombre positif"),
     query("maxPrice").optional().isFloat({ min: 0 }).withMessage("Le prix maximum doit être un nombre positif"),
     query("color").optional().isString(),
@@ -36,11 +37,16 @@ router.get(
   ],
   validateRequest,
   async (req, res, next) => {
-    console.log('Requête GET /api/products reçue')
-    console.log('Query params:', req.query)
+    console.log('--- REQUÊTE GET /api/products REÇUE ---')
+    console.log('Query params bruts:', req.query)
+    console.log('Type de brand_id:', typeof req.query.brand_id, 'Valeur:', req.query.brand_id)
     
     try {
       const result = await ProductController.getAllProducts(req, res, next)
+      console.log('Résultat de la requête:', { 
+        total: result.pagination.totalItems,
+        page: result.pagination.currentPage
+      })
       res.json(result)
     } catch (error) {
       console.error('Erreur lors de la récupération des produits:', error)

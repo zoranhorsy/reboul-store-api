@@ -40,8 +40,16 @@ class ProductController {
       addCondition("category_id = $" + paramIndex, Number.parseInt(req.query.category_id))
     }
 
-    if (req.query.brand) {
-      addCondition("brand = $" + paramIndex, req.query.brand)
+    // Utiliser brand_id comme filtre principal pour la marque
+    if (req.query.brand_id) {
+      const brandIdValue = Number.parseInt(req.query.brand_id);
+      console.log(`Filtrage par brand_id: ${req.query.brand_id} (converti en: ${brandIdValue})`);
+      addCondition("brand_id = $" + paramIndex, brandIdValue);
+    } 
+    // Garder brand comme fallback pour rétrocompatibilité
+    else if (req.query.brand) {
+      console.log(`Filtrage par brand: ${req.query.brand}`);
+      addCondition("brand = $" + paramIndex, req.query.brand);
     }
 
     if (req.query.minPrice) {
