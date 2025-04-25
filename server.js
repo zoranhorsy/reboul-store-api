@@ -219,7 +219,6 @@ app.get('/collections/stats', async (req, res) => {
       FROM products
       WHERE 
         active = true AND 
-        (deleted IS NULL OR deleted = false) AND
         (_actiontype IS NULL OR _actiontype NOT IN ('hardDelete', 'delete', 'permDelete')) AND
         (store_type IS NOT NULL AND store_type != 'deleted')
       GROUP BY store_type
