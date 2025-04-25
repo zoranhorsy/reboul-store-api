@@ -205,6 +205,62 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/stats', statsRouter);
 app.use('/api/archives', archivesRouter);
 
+// Endpoint spécial pour les statistiques des collections par store_type
+app.get('/collections/stats', async (req, res) => {
+  try {
+    console.log('Requête de statistiques des collections reçue');
+    
+    // Exécuter la requête pour compter les produits par store_type
+    const query = `
+      SELECT 
+        store_type, 
+        COUNT(*) as total,
+        SUM(CASE WHEN new = true THEN 1 ELSE 0 END) as new_count
+      FROM products
+      WHERE 
+        active = true AND 
+        (deleted IS NULL OR deleted = false) AND
+        (_actiontype IS NULL OR _actiontype NOT IN ('hardDelete', 'delete', 'permDelete')) AND
+        (store_type IS NOT NULL AND store_type != 'deleted')
+      GROUP BY store_type
+    `;
+    
+    const result = await db.pool.query(query);
+    
+    // Transformer les résultats dans le format attendu
+    const stats = {};
+    result.rows.forEach(row => {
+      stats[row.store_type] = {
+        total: parseInt(row.total),
+        new: parseInt(row.new_count)
+      };
+    });
+    
+    // S'assurer que toutes les catégories connues sont présentes dans les stats
+    const knownTypes = ['adult', 'kids', 'sneakers', 'cpcompany'];
+    knownTypes.forEach(type => {
+      if (!stats[type]) {
+        stats[type] = { total: 0, new: 0 };
+      }
+    });
+    
+    console.log('Statistiques calculées:', stats);
+    res.json(stats);
+  } catch (error) {
+    console.error('Erreur lors du calcul des statistiques des collections:', error);
+    res.status(500).json({
+      error: 'Erreur lors du calcul des statistiques',
+      details: error.message,
+      demoData: {
+        adult: { total: 178, new: 12 },
+        kids: { total: 94, new: 8 },
+        sneakers: { total: 67, new: 0 },
+        cpcompany: { total: 42, new: 0 }
+      }
+    });
+  }
+});
+
 // Configuration SMTP pour Gmail
 const smtpConfig = {
     host: process.env.SMTP_HOST || 'smtp.gmail.com',
