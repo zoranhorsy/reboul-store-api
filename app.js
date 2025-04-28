@@ -12,13 +12,15 @@ const uploadRoutes = require('./routes/upload');
 const adminRoutes = require('./routes/admin');
 const reviewsRoutes = require('./routes/reviews');
 const addressesRoutes = require('./routes/addresses');
+const cornerProductsRoutes = require('./routes/cornerProducts');
+const cornerProductVariantsRoutes = require('./routes/cornerProductVariants');
 
 const app = express();
 
 // Configuration CORS
 app.use(cors({
-    origin: 'http://localhost:3000', // L'URL de votre frontend
-    credentials: true, // Permet l'envoi de cookies et d'en-têtes d'authentification
+    origin: ['http://localhost:3000', 'https://reboul-store-api-production.up.railway.app'], // Autoriser les deux domaines
+    credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
 }));
@@ -38,6 +40,8 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/reviews', reviewsRoutes);
 app.use('/api/addresses', addressesRoutes);
+app.use('/api/corner-products', cornerProductsRoutes);
+app.use('/api/corner-product-variants', cornerProductVariantsRoutes);
 
 // Error handling
 app.use(errorHandler);
