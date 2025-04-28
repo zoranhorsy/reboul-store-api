@@ -50,118 +50,123 @@ const validateVariants = (variants) => {
 class CornerProductController {
   // Récupérer tous les produits de The Corner avec filtrage
   static async getAllCornerProducts(req) {
-    const page = Number.parseInt(req.query.page) || 1
-    const limit = Number.parseInt(req.query.limit) || 50
-    const offset = (page - 1) * limit
+    try {
+      const page = Number.parseInt(req.query.page) || 1
+      const limit = Number.parseInt(req.query.limit) || 50
+      const offset = (page - 1) * limit
 
-    const queryParams = []
-    const whereConditions = ["cp.active = true"]
-    let paramIndex = 1
+      const queryParams = []
+      const whereConditions = ["corner_products.active = true"]
+      let paramIndex = 1
 
-    // Fonction pour ajouter une condition
-    const addCondition = (condition, value) => {
-      whereConditions.push(condition)
-      queryParams.push(value)
-      return paramIndex++
-    }
-
-    // Ajout des conditions de filtrage
-    if (req.query.category_id) {
-      addCondition("cp.category_id = $" + paramIndex, Number.parseInt(req.query.category_id))
-    }
-
-    if (req.query.brand_id) {
-      addCondition("cp.brand_id = $" + paramIndex, Number.parseInt(req.query.brand_id))
-    } else if (req.query.brand) {
-      addCondition("cp.brand = $" + paramIndex, req.query.brand)
-    }
-
-    if (req.query.minPrice) {
-      addCondition("cp.price::numeric >= $" + paramIndex, Number.parseFloat(req.query.minPrice))
-    }
-
-    if (req.query.maxPrice) {
-      addCondition("cp.price::numeric <= $" + paramIndex, Number.parseFloat(req.query.maxPrice))
-    }
-
-    if (req.query.featured !== undefined) {
-      addCondition("cp.featured = $" + paramIndex, req.query.featured === "true")
-    }
-
-    if (req.query.search) {
-      const searchTerm = "%" + req.query.search + "%"
-      addCondition(
-        "(cp.name ILIKE $" + paramIndex + " OR cp.description ILIKE $" + paramIndex + ")",
-        searchTerm
-      )
-    }
-
-    // Filtrage par couleur et taille
-    if (req.query.color) {
-      addCondition("EXISTS (SELECT 1 FROM corner_product_variants cpv WHERE cpv.corner_product_id = cp.id AND cpv.couleur = $" + paramIndex + " AND cpv.active = true)", req.query.color)
-    }
-
-    if (req.query.size) {
-      addCondition("EXISTS (SELECT 1 FROM corner_product_variants cpv WHERE cpv.corner_product_id = cp.id AND cpv.taille = $" + paramIndex + " AND cpv.active = true)", req.query.size)
-    }
-
-    // Vérification du stock disponible
-    if (req.query.inStock === 'true') {
-      whereConditions.push("EXISTS (SELECT 1 FROM corner_product_variants cpv WHERE cpv.corner_product_id = cp.id AND cpv.stock > 0 AND cpv.active = true)")
-    }
-
-    // Détermination du tri
-    const sortColumn = req.query.sort === "price" ? "cp.price::numeric" : "cp.name"
-    const sortOrder = req.query.order === "desc" ? "DESC" : "ASC"
-
-    // Construction de la requête SQL
-    const query = `
-      WITH product_data AS (
-        SELECT 
-          cp.*,
-          json_agg(
-            json_build_object(
-              'id', cpv.id,
-              'taille', cpv.taille,
-              'couleur', cpv.couleur,
-              'stock', cpv.stock,
-              'price', cpv.price
-            )
-          ) FILTER (WHERE cpv.id IS NOT NULL) as variants
-        FROM corner_products cp
-        LEFT JOIN corner_product_variants cpv ON cp.id = cpv.corner_product_id AND cpv.active = true
-        WHERE ${whereConditions.join(" AND ")}
-        GROUP BY cp.id
-      )
-      SELECT *
-      FROM product_data
-      ORDER BY ${sortColumn} ${sortOrder}
-      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-    `
-
-    const countQuery = `
-      SELECT COUNT(DISTINCT cp.id)
-      FROM corner_products cp
-      LEFT JOIN corner_product_variants cpv ON cp.id = cpv.corner_product_id AND cpv.active = true
-      WHERE ${whereConditions.join(" AND ")}
-    `
-
-    const [products, count] = await Promise.all([
-      pool.query(query, [...queryParams, limit, offset]),
-      pool.query(countQuery, queryParams)
-    ])
-
-    return {
-      data: products.rows.map(product => ({
-        ...product,
-        variants: product.variants || []
-      })),
-      pagination: {
-        currentPage: page,
-        pageSize: limit,
-        totalItems: parseInt(count.rows[0].count),
-        totalPages: Math.ceil(parseInt(count.rows[0].count) / limit)
+      // Fonction pour ajouter une condition
+      const addCondition = (condition, value) => {
+        whereConditions.push(condition)
+        queryParams.push(value)
+        return paramIndex++
       }
+
+      // Ajout des conditions de filtrage
+      if (req.query.category_id) {
+        addCondition("corner_products.category_id = $" + paramIndex, Number.parseInt(req.query.category_id))
+      }
+
+      if (req.query.brand_id) {
+        addCondition("corner_products.brand_id = $" + paramIndex, Number.parseInt(req.query.brand_id))
+      } else if (req.query.brand) {
+        addCondition("corner_products.brand = $" + paramIndex, req.query.brand)
+      }
+
+      if (req.query.minPrice) {
+        addCondition("corner_products.price::numeric >= $" + paramIndex, Number.parseFloat(req.query.minPrice))
+      }
+
+      if (req.query.maxPrice) {
+        addCondition("corner_products.price::numeric <= $" + paramIndex, Number.parseFloat(req.query.maxPrice))
+      }
+
+      if (req.query.featured !== undefined) {
+        addCondition("corner_products.featured = $" + paramIndex, req.query.featured === "true")
+      }
+
+      if (req.query.search) {
+        const searchTerm = "%" + req.query.search + "%"
+        addCondition(
+          "(corner_products.name ILIKE $" + paramIndex + " OR corner_products.description ILIKE $" + paramIndex + ")",
+          searchTerm
+        )
+      }
+
+      // Filtrage par couleur et taille
+      if (req.query.color) {
+        addCondition("EXISTS (SELECT 1 FROM corner_product_variants WHERE corner_product_variants.corner_product_id = corner_products.id AND corner_product_variants.couleur = $" + paramIndex + " AND corner_product_variants.active = true)", req.query.color)
+      }
+
+      if (req.query.size) {
+        addCondition("EXISTS (SELECT 1 FROM corner_product_variants WHERE corner_product_variants.corner_product_id = corner_products.id AND corner_product_variants.taille = $" + paramIndex + " AND corner_product_variants.active = true)", req.query.size)
+      }
+
+      // Vérification du stock disponible
+      if (req.query.inStock === 'true') {
+        whereConditions.push("EXISTS (SELECT 1 FROM corner_product_variants WHERE corner_product_variants.corner_product_id = corner_products.id AND corner_product_variants.stock > 0 AND corner_product_variants.active = true)")
+      }
+
+      // Détermination du tri
+      const sortColumn = req.query.sort === "price" ? "corner_products.price::numeric" : "corner_products.name"
+      const sortOrder = req.query.order === "desc" ? "DESC" : "ASC"
+
+      // Construction de la requête SQL
+      const query = `
+        WITH product_data AS (
+          SELECT 
+            corner_products.*,
+            json_agg(
+              json_build_object(
+                'id', corner_product_variants.id,
+                'taille', corner_product_variants.taille,
+                'couleur', corner_product_variants.couleur,
+                'stock', corner_product_variants.stock,
+                'price', corner_product_variants.price
+              )
+            ) FILTER (WHERE corner_product_variants.id IS NOT NULL) as variants
+          FROM corner_products
+          LEFT JOIN corner_product_variants ON corner_products.id = corner_product_variants.corner_product_id AND corner_product_variants.active = true
+          WHERE ${whereConditions.join(" AND ")}
+          GROUP BY corner_products.id
+        )
+        SELECT *
+        FROM product_data
+        ORDER BY ${sortColumn} ${sortOrder}
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `
+
+      const countQuery = `
+        SELECT COUNT(DISTINCT corner_products.id)
+        FROM corner_products
+        LEFT JOIN corner_product_variants ON corner_products.id = corner_product_variants.corner_product_id AND corner_product_variants.active = true
+        WHERE ${whereConditions.join(" AND ")}
+      `
+
+      const [products, count] = await Promise.all([
+        pool.query(query, [...queryParams, limit, offset]),
+        pool.query(countQuery, queryParams)
+      ])
+
+      return {
+        data: products.rows.map(product => ({
+          ...product,
+          variants: product.variants || []
+        })),
+        pagination: {
+          currentPage: page,
+          pageSize: limit,
+          totalItems: parseInt(count.rows[0].count),
+          totalPages: Math.ceil(parseInt(count.rows[0].count) / limit)
+        }
+      }
+    } catch (error) {
+      console.error('Erreur dans getAllCornerProducts:', error);
+      throw error;
     }
   }
 
