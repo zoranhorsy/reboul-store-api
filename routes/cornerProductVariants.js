@@ -2,7 +2,7 @@ const express = require('express')
 const router = express.Router()
 const { body, param } = require('express-validator')
 const validateRequest = require('../middleware/validateRequest')
-const authMiddleware = require('../middleware/authMiddleware')
+const authMiddleware = require('../middleware/auth')
 const CornerProductVariantController = require('../controllers/cornerProductVariantController')
 
 // Validation des champs du variant

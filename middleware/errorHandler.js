@@ -1,9 +1,10 @@
 class AppError extends Error {
-    constructor(message, statusCode) {
+    constructor(message, statusCode, errors = []) {
         super(message);
         this.statusCode = statusCode;
         this.status = `${statusCode}`.startsWith('4') ? 'fail' : 'error';
         this.isOperational = true;
+        this.errors = errors;
 
         Error.captureStackTrace(this, this.constructor);
     }
@@ -20,6 +21,7 @@ const errorHandler = (err, req, res, next) => {
             status: err.status,
             error: err,
             message: err.message,
+            errors: err.errors,
             stack: err.stack
         });
     } else {
@@ -27,7 +29,8 @@ const errorHandler = (err, req, res, next) => {
         if (err.isOperational) {
             res.status(err.statusCode).json({
                 status: err.status,
-                message: err.message
+                message: err.message,
+                errors: err.errors
             });
         } else {
             // Gestion des erreurs spécifiques
