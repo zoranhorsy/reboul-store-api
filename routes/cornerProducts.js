@@ -5,6 +5,7 @@ const { AppError } = require("../middleware/errorHandler")
 const authMiddleware = require("../middleware/auth")
 const uploadFields = require("../middleware/upload")
 const { CornerProductController } = require("../controllers/cornerProductController")
+const pool = require("../db")
 
 // Middleware de validation
 const validateRequest = (req, res, next) => {
@@ -28,6 +29,28 @@ const variantValidation = [
   body("variants.*.size").optional().isString().notEmpty().withMessage("La taille est requise"),
   body("variants.*.stock").optional().isInt({ min: 0 }).withMessage("Le stock doit être un nombre positif"),
 ]
+
+// GET tous les produits The Corner
+router.get("/", async (req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT * FROM corner_products WHERE active = true")
+    res.json({
+      data: rows,
+      pagination: {
+        currentPage: 1,
+        pageSize: rows.length,
+        totalItems: rows.length,
+        totalPages: 1
+      }
+    })
+  } catch (error) {
+    console.error('Erreur dans GET /corner-products:', error)
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    })
+  }
+})
 
 // GET tous les produits The Corner avec filtrage
 router.get(
