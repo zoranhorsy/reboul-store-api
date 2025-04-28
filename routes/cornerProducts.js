@@ -15,6 +15,20 @@ const validateRequest = (req, res, next) => {
   next()
 }
 
+// Validation des prix
+const priceValidation = [
+  body("price").isFloat({ min: 0 }).withMessage("Le prix doit être un nombre positif"),
+  body("old_price").optional().isFloat({ min: 0 }).withMessage("L'ancien prix doit être un nombre positif"),
+]
+
+// Validation des variants
+const variantValidation = [
+  body("variants").optional().isArray().withMessage("Les variants doivent être un tableau"),
+  body("variants.*.color").optional().isString().notEmpty().withMessage("La couleur est requise"),
+  body("variants.*.size").optional().isString().notEmpty().withMessage("La taille est requise"),
+  body("variants.*.stock").optional().isInt({ min: 0 }).withMessage("Le stock doit être un nombre positif"),
+]
+
 // GET tous les produits The Corner avec filtrage
 router.get(
   "/",
@@ -26,27 +40,18 @@ router.get(
     query("brand_id").optional().isInt().withMessage("brand_id doit être un nombre entier"),
     query("minPrice").optional().isFloat({ min: 0 }).withMessage("Le prix minimum doit être un nombre positif"),
     query("maxPrice").optional().isFloat({ min: 0 }).withMessage("Le prix maximum doit être un nombre positif"),
-    query("color").optional().isString(),
-    query("size").optional().isString(),
     query("featured").optional().isBoolean(),
     query("search").optional().isString(),
     query("sort").optional().isIn(["name", "price"]).withMessage("Le tri doit être soit par nom, soit par prix"),
     query("order").optional().isIn(["asc", "desc"]).withMessage("L'ordre doit être asc ou desc"),
+    query("inStock").optional().isBoolean(),
   ],
   validateRequest,
   async (req, res, next) => {
-    console.log('--- REQUÊTE GET /api/corner-products REÇUE ---')
-    console.log('Query params bruts:', req.query)
-    
     try {
       const result = await CornerProductController.getAllCornerProducts(req)
-      console.log('Résultat de la requête:', { 
-        total: result.pagination.totalItems,
-        page: result.pagination.currentPage
-      })
       res.json(result)
     } catch (error) {
-      console.error('Erreur lors de la récupération des produits The Corner:', error)
       next(error)
     }
   }
@@ -74,11 +79,19 @@ router.post(
   uploadFields,
   [
     body("name").notEmpty().withMessage("Le nom du produit est requis"),
-    body("price").isFloat({ min: 0 }).withMessage("Le prix doit être un nombre positif"),
+    ...priceValidation,
+    ...variantValidation,
     body("description").optional().isString(),
     body("category_id").optional().isInt(),
     body("brand").optional().isString(),
     body("brand_id").optional().isInt(),
+    body("featured").optional().isBoolean(),
+    body("new").optional().isBoolean(),
+    body("sku").optional().isString(),
+    body("store_reference").optional().isString(),
+    body("material").optional().isString(),
+    body("weight").optional().isInt({ min: 0 }),
+    body("dimensions").optional().isString(),
   ],
   validateRequest,
   async (req, res, next) => {
@@ -99,16 +112,45 @@ router.put(
   [
     param("id").isInt().withMessage("L'ID du produit doit être un nombre entier"),
     body("name").optional().notEmpty().withMessage("Le nom du produit ne peut pas être vide"),
-    body("price").optional().isFloat({ min: 0 }).withMessage("Le prix doit être un nombre positif"),
+    ...priceValidation,
+    ...variantValidation,
     body("description").optional().isString(),
     body("category_id").optional().isInt(),
     body("brand").optional().isString(),
     body("brand_id").optional().isInt(),
+    body("featured").optional().isBoolean(),
+    body("new").optional().isBoolean(),
+    body("sku").optional().isString(),
+    body("store_reference").optional().isString(),
+    body("material").optional().isString(),
+    body("weight").optional().isInt({ min: 0 }),
+    body("dimensions").optional().isString(),
   ],
   validateRequest,
   async (req, res, next) => {
     try {
       const product = await CornerProductController.updateCornerProduct(req.params.id, req.body, req.files)
+      res.json(product)
+    } catch (err) {
+      next(err)
+    }
+  }
+)
+
+// PATCH pour mettre à jour le stock d'un variant
+router.patch(
+  "/:id/stock",
+  authMiddleware,
+  [
+    param("id").isInt().withMessage("L'ID du produit doit être un nombre entier"),
+    body("color").notEmpty().withMessage("La couleur est requise"),
+    body("size").notEmpty().withMessage("La taille est requise"),
+    body("quantity").isInt({ min: 0 }).withMessage("La quantité doit être un nombre positif"),
+  ],
+  validateRequest,
+  async (req, res, next) => {
+    try {
+      const product = await CornerProductController.updateVariantStock(req.params.id, req.body)
       res.json(product)
     } catch (err) {
       next(err)
@@ -125,7 +167,11 @@ router.delete(
   async (req, res, next) => {
     try {
       const deletedProduct = await CornerProductController.deleteCornerProduct(req.params.id)
-      res.json({ message: "Produit The Corner supprimé avec succès", deletedProduct })
+      res.json({ 
+        message: "Produit The Corner supprimé avec succès", 
+        product: deletedProduct,
+        type: deletedProduct.active === false ? "soft_delete" : "hard_delete"
+      })
     } catch (err) {
       next(err)
     }

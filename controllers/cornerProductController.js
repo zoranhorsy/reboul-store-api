@@ -2,17 +2,48 @@ const pool = require("../db")
 const { AppError } = require("../middleware/errorHandler")
 const { uploadToCloudinary, deleteFromCloudinary } = require('../utils/cloudinary')
 
-// Fonction utilitaire pour parser les champs JSON
-const parseJsonField = (field, value) => {
-  if (typeof value === "string") {
-    try {
-      return JSON.parse(value)
-    } catch (e) {
-      console.error(`Erreur lors du parsing du champ ${field}:`, e)
-      return value
+// Validation des prix
+const validatePrices = (price, old_price) => {
+  const numPrice = Number(price);
+  const numOldPrice = old_price ? Number(old_price) : null;
+
+  if (isNaN(numPrice) || numPrice <= 0) {
+    throw new AppError("Le prix doit être un nombre positif", 400);
+  }
+
+  if (numOldPrice !== null) {
+    if (isNaN(numOldPrice) || numOldPrice <= 0) {
+      throw new AppError("L'ancien prix doit être un nombre positif", 400);
+    }
+    if (numOldPrice <= numPrice) {
+      throw new AppError("L'ancien prix doit être supérieur au prix actuel", 400);
     }
   }
-  return value
+
+  return { price: numPrice, old_price: numOldPrice };
+}
+
+// Validation des variants
+const validateVariants = (variants) => {
+  if (!Array.isArray(variants)) {
+    throw new AppError("Les variants doivent être un tableau", 400);
+  }
+
+  return variants.map(variant => {
+    if (!variant.color || !variant.size || typeof variant.stock !== 'number') {
+      throw new AppError("Chaque variant doit avoir une couleur, une taille et un stock", 400);
+    }
+
+    if (variant.stock < 0) {
+      throw new AppError("Le stock ne peut pas être négatif", 400);
+    }
+
+    return {
+      color: variant.color.trim(),
+      size: variant.size.trim(),
+      stock: variant.stock
+    };
+  });
 }
 
 class CornerProductController {
@@ -23,7 +54,7 @@ class CornerProductController {
     const offset = (page - 1) * limit
 
     const queryParams = []
-    const whereConditions = []
+    const whereConditions = ["active = true"]
     let paramIndex = 1
 
     // Fonction pour ajouter une condition
@@ -38,13 +69,9 @@ class CornerProductController {
       addCondition("category_id = $" + paramIndex, Number.parseInt(req.query.category_id))
     }
 
-    // Utiliser brand_id comme filtre principal pour la marque
     if (req.query.brand_id) {
-      const brandIdValue = Number.parseInt(req.query.brand_id)
-      addCondition("brand_id = $" + paramIndex, brandIdValue)
-    } 
-    // Garder brand comme fallback pour rétrocompatibilité
-    else if (req.query.brand) {
+      addCondition("brand_id = $" + paramIndex, Number.parseInt(req.query.brand_id))
+    } else if (req.query.brand) {
       addCondition("brand = $" + paramIndex, req.query.brand)
     }
 
@@ -56,17 +83,6 @@ class CornerProductController {
       addCondition("price::numeric <= $" + paramIndex, Number.parseFloat(req.query.maxPrice))
     }
 
-    if (req.query.color) {
-      addCondition(
-        "EXISTS (SELECT 1 FROM jsonb_array_elements(variants) v WHERE LOWER(v->>'color') = $" + paramIndex + ")",
-        req.query.color.toLowerCase()
-      )
-    }
-
-    if (req.query.size) {
-      addCondition("variants @> $" + paramIndex, JSON.stringify([{ size: req.query.size }]))
-    }
-
     if (req.query.featured !== undefined) {
       addCondition("featured = $" + paramIndex, req.query.featured === "true")
     }
@@ -76,6 +92,11 @@ class CornerProductController {
         "(name ILIKE $" + paramIndex + " OR description ILIKE $" + paramIndex + ")",
         "%" + req.query.search + "%"
       )
+    }
+
+    // Vérification du stock disponible
+    if (req.query.inStock === 'true') {
+      whereConditions.push("(variants IS NULL OR EXISTS (SELECT 1 FROM jsonb_array_elements(variants) v WHERE (v->>'stock')::int > 0))")
     }
 
     // Détermination du tri
@@ -112,7 +133,15 @@ class CornerProductController {
 
   // Récupérer un produit de The Corner par ID
   static async getCornerProductById(id) {
-    const { rows } = await pool.query("SELECT * FROM corner_products WHERE id = $1", [id])
+    const { rows } = await pool.query(
+      "SELECT cp.*, COALESCE(json_agg(r.*) FILTER (WHERE r.id IS NOT NULL), '[]') as reviews " +
+      "FROM corner_products cp " +
+      "LEFT JOIN reviews r ON r.corner_product_id = cp.id " +
+      "WHERE cp.id = $1 AND cp.active = true " +
+      "GROUP BY cp.id",
+      [id]
+    )
+
     if (rows.length === 0) {
       throw new AppError("Produit The Corner non trouvé", 404)
     }
@@ -121,50 +150,147 @@ class CornerProductController {
 
   // Créer un nouveau produit The Corner
   static async createCornerProduct(data, files) {
-    const productData = await CornerProductController._prepareProductData(data, files)
-    
-    const keys = Object.keys(productData)
-    const values = Object.values(productData)
-    const placeholders = keys.map((_, index) => `$${index + 1}`).join(", ")
+    try {
+      // Validation des prix
+      const { price, old_price } = validatePrices(data.price, data.old_price);
 
-    const query = `
-      INSERT INTO corner_products (${keys.join(", ")})
-      VALUES (${placeholders})
-      RETURNING *;
-    `
+      // Validation des variants si présents
+      let variants = [];
+      if (data.variants) {
+        variants = validateVariants(
+          typeof data.variants === 'string' ? JSON.parse(data.variants) : data.variants
+        );
+      }
 
-    const { rows } = await pool.query(query, values)
-    return rows[0]
+      // Préparation des données du produit
+      const productData = {
+        name: data.name.trim(),
+        description: data.description?.trim(),
+        price,
+        old_price,
+        category_id: data.category_id,
+        brand_id: data.brand_id,
+        brand: data.brand?.trim(),
+        variants: JSON.stringify(variants),
+        featured: Boolean(data.featured),
+        active: true,
+        new: Boolean(data.new),
+        sku: data.sku?.trim(),
+        store_reference: data.store_reference?.trim(),
+        material: data.material?.trim(),
+        weight: data.weight ? Number(data.weight) : null,
+        dimensions: data.dimensions?.trim()
+      };
+
+      // Gestion des images
+      if (files && files.length > 0) {
+        const uploadedImages = await Promise.all(
+          files.map(file => uploadToCloudinary(file.path))
+        );
+
+        productData.image_url = uploadedImages[0].secure_url;
+        productData.images = uploadedImages.map(img => img.secure_url);
+      }
+
+      // Insertion dans la base de données
+      const columns = Object.keys(productData);
+      const values = Object.values(productData);
+      const placeholders = values.map((_, i) => `$${i + 1}`).join(', ');
+
+      const query = `
+        INSERT INTO corner_products (${columns.join(', ')})
+        VALUES (${placeholders})
+        RETURNING *
+      `;
+
+      const { rows } = await pool.query(query, values);
+      return rows[0];
+    } catch (error) {
+      // Si une erreur survient, supprimer les images uploadées
+      if (error.uploadedImages) {
+        await Promise.all(
+          error.uploadedImages.map(img => deleteFromCloudinary(img.public_id))
+        );
+      }
+      throw error;
+    }
   }
 
   // Mettre à jour un produit The Corner
   static async updateCornerProduct(id, data, files) {
-    const updateFields = await CornerProductController._prepareProductData(data, files)
-    
-    const setClause = Object.keys(updateFields)
-      .map((key, index) => {
-        if (["variants", "reviews", "questions", "faqs", "size_chart"].includes(key)) {
-          return `${key} = COALESCE($${index + 1}::jsonb, ${key})`
+    try {
+      // Vérifier si le produit existe
+      const existingProduct = await CornerProductController.getCornerProductById(id);
+      if (!existingProduct) {
+        throw new AppError("Produit non trouvé", 404);
+      }
+
+      // Validation des prix si fournis
+      let priceData = {};
+      if (data.price || data.old_price) {
+        priceData = validatePrices(
+          data.price || existingProduct.price,
+          data.old_price
+        );
+      }
+
+      // Validation des variants si fournis
+      let variants = existingProduct.variants;
+      if (data.variants) {
+        variants = validateVariants(
+          typeof data.variants === 'string' ? JSON.parse(data.variants) : data.variants
+        );
+      }
+
+      // Préparation des données à mettre à jour
+      const updateData = {
+        ...data,
+        ...priceData,
+        variants: JSON.stringify(variants),
+        updated_at: new Date()
+      };
+
+      // Gestion des nouvelles images
+      if (files && files.length > 0) {
+        const uploadedImages = await Promise.all(
+          files.map(file => uploadToCloudinary(file.path))
+        );
+
+        updateData.image_url = uploadedImages[0].secure_url;
+        updateData.images = uploadedImages.map(img => img.secure_url);
+
+        // Supprimer les anciennes images
+        if (existingProduct.images) {
+          await Promise.all(
+            existingProduct.images.map(img => deleteFromCloudinary(img))
+          );
         }
-        return `${key} = COALESCE($${index + 1}, ${key})`
-      })
-      .join(", ")
-    
-    const values = Object.values(updateFields)
+      }
 
-    const query = `
-      UPDATE corner_products
-      SET ${setClause}
-      WHERE id = $${values.length + 1}
-      RETURNING *;
-    `
+      // Construction de la requête de mise à jour
+      const updates = Object.keys(updateData)
+        .map((key, i) => `${key} = $${i + 1}`)
+        .join(', ');
 
-    const result = await pool.query(query, [...values, id])
-    if (result.rows.length === 0) {
-      throw new AppError("Produit The Corner non trouvé", 404)
+      const query = `
+        UPDATE corner_products
+        SET ${updates}
+        WHERE id = $${Object.keys(updateData).length + 1}
+        RETURNING *
+      `;
+
+      const values = [...Object.values(updateData), id];
+      const { rows } = await pool.query(query, values);
+
+      return rows[0];
+    } catch (error) {
+      if (error.uploadedImages) {
+        await Promise.all(
+          error.uploadedImages.map(img => deleteFromCloudinary(img.public_id))
+        );
+      }
+      throw error;
     }
-
-    return result.rows[0]
   }
 
   // Supprimer un produit The Corner
@@ -175,169 +301,77 @@ class CornerProductController {
       [id]
     )
 
-    if (orderCheck[0] && orderCheck[0].exists) {
-      throw new AppError(
-        "Ce produit The Corner ne peut pas être supprimé car il est référencé dans des commandes existantes.",
-        400
-      )
+    if (orderCheck[0].exists) {
+      // Au lieu de supprimer, marquer comme inactif
+      const { rows } = await pool.query(
+        "UPDATE corner_products SET active = false, _actiontype = 'delete' WHERE id = $1 RETURNING *",
+        [id]
+      );
+      return rows[0];
     }
 
-    // Récupérer les informations du produit
-    const { rows } = await pool.query("SELECT image_url, images FROM corner_products WHERE id = $1", [id])
+    // Si pas de commandes, supprimer complètement
+    const { rows } = await pool.query(
+      "SELECT image_url, images FROM corner_products WHERE id = $1",
+      [id]
+    );
+
     if (rows.length === 0) {
-      throw new AppError("Produit The Corner non trouvé", 404)
+      throw new AppError("Produit The Corner non trouvé", 404);
+    }
+
+    // Supprimer les images
+    const product = rows[0];
+    if (product.image_url) {
+      await deleteFromCloudinary(product.image_url);
+    }
+    if (product.images) {
+      await Promise.all(product.images.map(img => deleteFromCloudinary(img)));
     }
 
     // Supprimer le produit
-    const deleteResult = await pool.query("DELETE FROM corner_products WHERE id = $1 RETURNING *", [id])
-    
-    // Supprimer les images associées si nécessaire
-    await CornerProductController._deleteProductImages(rows[0])
+    const deleteResult = await pool.query(
+      "DELETE FROM corner_products WHERE id = $1 RETURNING *",
+      [id]
+    );
 
-    return deleteResult.rows[0]
+    return deleteResult.rows[0];
   }
 
-  // Méthodes privées utilitaires
-  static async _prepareProductData(data, files) {
-    const productData = { ...data }
-    
-    // Gestion des images avec Cloudinary (si utilisé)
-    if (files && files.length > 0) {
-      try {
-        const uploadedImages = await CornerProductController.handleProductImages(files)
-        
-        if (uploadedImages.length > 0) {
-          // Toujours utiliser la première image uploadée comme image_url
-          productData.image_url = uploadedImages[0].url
-          
-          // Stocker toutes les URLs des images dans le tableau images
-          productData.images = uploadedImages.map(img => img.url)
-        }
-      } catch (error) {
-        console.error('Erreur lors de l\'upload des images:', error)
-        throw new AppError('Erreur lors de l\'upload des images', 500)
-      }
-    } else if (data.images) {
-      let images = []
-      
-      // Traitement des images existantes
-      if (typeof data.images === 'string') {
-        try {
-          // Essayer de parser comme JSON
-          images = JSON.parse(data.images)
-        } catch (error) {
-          // Si ce n'est pas du JSON valide, vérifier si c'est une URL unique
-          if (data.images.includes('cloudinary.com')) {
-            images = [data.images]
-          } else {
-            // Sinon, essayer de splitter sur les virgules
-            images = data.images.split(',').map(url => url.trim())
-          }
-        }
-      } else if (Array.isArray(data.images)) {
-        images = data.images
-      }
-      
-      productData.images = images
-    }
-    
-    // Traitement des variants (tailles, couleurs, etc.)
-    if (data.variants) {
-      if (typeof data.variants === 'string') {
-        try {
-          productData.variants = JSON.parse(data.variants)
-        } catch (error) {
-          console.error('Erreur lors du parsing des variants:', error)
-          throw new AppError('Format de variants invalide', 400)
-        }
-      }
-    }
-    
-    // Traitement des détails (caractéristiques du produit)
-    if (data.details) {
-      if (typeof data.details === 'string') {
-        try {
-          productData.details = JSON.parse(data.details)
-        } catch (error) {
-          // Si ce n'est pas du JSON valide, essayer de splitter
-          productData.details = data.details.split(',').map(detail => detail.trim())
-        }
-      }
-    }
-    
-    // Traitement des tags
-    if (data.tags) {
-      if (typeof data.tags === 'string') {
-        try {
-          productData.tags = JSON.parse(data.tags)
-        } catch (error) {
-          // Si ce n'est pas du JSON valide, essayer de splitter
-          productData.tags = data.tags.split(',').map(tag => tag.trim())
-        }
-      }
-    }
-    
-    return productData
-  }
+  // Méthode pour mettre à jour le stock d'un variant
+  static async updateVariantStock(productId, variantData) {
+    const { color, size, quantity } = variantData;
 
-  static async _deleteProductImages(product) {
-    // Si l'application utilise Cloudinary, supprimer les images
-    if (product.image_url) {
-      try {
-        await deleteFromCloudinary(product.image_url)
-      } catch (error) {
-        console.error('Erreur lors de la suppression de l\'image principale:', error)
-      }
+    if (quantity < 0) {
+      throw new AppError("La quantité ne peut pas être négative", 400);
     }
-    
-    if (product.images && Array.isArray(product.images)) {
-      for (const imageUrl of product.images) {
-        try {
-          await deleteFromCloudinary(imageUrl)
-        } catch (error) {
-          console.error(`Erreur lors de la suppression de l'image ${imageUrl}:`, error)
-        }
-      }
-    }
-  }
 
-  static async handleProductImages(files) {
-    const uploadedImages = []
-    
-    // Si files est un objet avec des propriétés pour chaque type d'image
-    if (files && typeof files === 'object' && !Array.isArray(files)) {
-      for (const fieldName in files) {
-        const fileArray = Array.isArray(files[fieldName]) ? files[fieldName] : [files[fieldName]]
-        
-        for (const file of fileArray) {
-          try {
-            const result = await uploadToCloudinary(file.path)
-            uploadedImages.push({
-              url: result.secure_url,
-              publicId: result.public_id
-            })
-          } catch (error) {
-            console.error(`Erreur lors de l'upload de l'image ${file.path}:`, error)
-          }
-        }
-      }
-    } 
-    // Si files est un tableau d'objets file
-    else if (Array.isArray(files)) {
-      for (const file of files) {
-        try {
-          const result = await uploadToCloudinary(file.path)
-          uploadedImages.push({
-            url: result.secure_url,
-            publicId: result.public_id
-          })
-        } catch (error) {
-          console.error(`Erreur lors de l'upload de l'image ${file.path}:`, error)
-        }
-      }
+    const { rows: [product] } = await pool.query(
+      "SELECT variants FROM corner_products WHERE id = $1",
+      [productId]
+    );
+
+    if (!product) {
+      throw new AppError("Produit non trouvé", 404);
     }
-    
-    return uploadedImages
+
+    let variants = product.variants || [];
+    const variantIndex = variants.findIndex(
+      v => v.color === color && v.size === size
+    );
+
+    if (variantIndex === -1) {
+      throw new AppError("Variant non trouvé", 404);
+    }
+
+    variants[variantIndex].stock = quantity;
+
+    const { rows } = await pool.query(
+      "UPDATE corner_products SET variants = $1 WHERE id = $2 RETURNING *",
+      [JSON.stringify(variants), productId]
+    );
+
+    return rows[0];
   }
 }
 
