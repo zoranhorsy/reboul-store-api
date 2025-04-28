@@ -1,5 +1,5 @@
 const CornerProductVariant = require('../models/CornerProductVariant')
-const AppError = require('../utils/appError')
+const { AppError } = require('../middleware/errorHandler')
 
 class CornerProductVariantController {
   // Récupérer tous les variants d'un produit

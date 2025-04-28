@@ -26,6 +26,27 @@ Thumbs.db
 # Tests
 coverage/
 .nyc_output/
+__tests__/
+jest.config.js
+jest.setup.js
+
+# Development files
+*.test.js
+*.spec.js
+
+# Git
+.git
+.gitignore
+
+# Documentation
+docs/
+*.md
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
 
 # User uploads (will be created by init-uploads.js)
 public/uploads/*

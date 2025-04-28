@@ -4,17 +4,22 @@ FROM node:18-alpine
 # Create app directory
 WORKDIR /app
 
-# Copy package files
+# Install dependencies first (for better caching)
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
 # Copy source code
 COPY . .
 
-# Create uploads directory
-RUN mkdir -p uploads
+# Create necessary directories
+RUN mkdir -p \
+    public/uploads \
+    public/brands \
+    public/archives \
+    public/placeholders
+
+# Set permissions
+RUN chmod -R 755 public
 
 # Expose port
 EXPOSE 3000
