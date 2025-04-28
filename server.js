@@ -182,6 +182,7 @@ app.use('/api/products', require('./routes/products'));
 // Routes
 const categoriesRouter = require('./routes/categories');
 const productsRouter = require('./routes/products');
+const cornerProductsRouter = require('./routes/cornerProducts');
 const brandsRouter = require('./routes/brands');
 const ordersRouter = require('./routes/orders');
 const usersRouter = require('./routes/users');
@@ -194,6 +195,7 @@ const archivesRouter = require('./routes/archives');
 // Enregistrement des routes avec le préfixe /api
 app.use('/api/categories', categoriesRouter);
 app.use('/api/products', productsRouter);
+app.use('/api/corner-products', cornerProductsRouter);
 app.use('/api/brands', brandsRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/users', usersRouter);
