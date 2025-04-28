@@ -1,5 +1,5 @@
 const pool = require('../db')
-const AppError = require('../utils/appError')
+const { AppError } = require(require('path').resolve(__dirname, '../middleware/errorHandler'))
 
 class CornerProductVariant {
   static async getByProductId(productId) {
