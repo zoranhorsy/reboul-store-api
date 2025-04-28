@@ -1,6 +1,7 @@
 const pool = require("../db")
 const { AppError } = require("../middleware/errorHandler")
 const { uploadToCloudinary, deleteFromCloudinary } = require('../utils/cloudinary')
+const CornerProductVariant = require('../models/CornerProductVariant')
 
 // Validation des prix
 const validatePrices = (price, old_price) => {
@@ -54,7 +55,7 @@ class CornerProductController {
     const offset = (page - 1) * limit
 
     const queryParams = []
-    const whereConditions = ["active = true"]
+    const whereConditions = ["cp.active = true"]
     let paramIndex = 1
 
     // Fonction pour ajouter une condition
@@ -66,86 +67,134 @@ class CornerProductController {
 
     // Ajout des conditions de filtrage
     if (req.query.category_id) {
-      addCondition("category_id = $" + paramIndex, Number.parseInt(req.query.category_id))
+      addCondition("cp.category_id = $" + paramIndex, Number.parseInt(req.query.category_id))
     }
 
     if (req.query.brand_id) {
-      addCondition("brand_id = $" + paramIndex, Number.parseInt(req.query.brand_id))
+      addCondition("cp.brand_id = $" + paramIndex, Number.parseInt(req.query.brand_id))
     } else if (req.query.brand) {
-      addCondition("brand = $" + paramIndex, req.query.brand)
+      addCondition("cp.brand = $" + paramIndex, req.query.brand)
     }
 
     if (req.query.minPrice) {
-      addCondition("price::numeric >= $" + paramIndex, Number.parseFloat(req.query.minPrice))
+      addCondition("cp.price::numeric >= $" + paramIndex, Number.parseFloat(req.query.minPrice))
     }
 
     if (req.query.maxPrice) {
-      addCondition("price::numeric <= $" + paramIndex, Number.parseFloat(req.query.maxPrice))
+      addCondition("cp.price::numeric <= $" + paramIndex, Number.parseFloat(req.query.maxPrice))
     }
 
     if (req.query.featured !== undefined) {
-      addCondition("featured = $" + paramIndex, req.query.featured === "true")
+      addCondition("cp.featured = $" + paramIndex, req.query.featured === "true")
     }
 
     if (req.query.search) {
+      const searchTerm = "%" + req.query.search + "%"
       addCondition(
-        "(name ILIKE $" + paramIndex + " OR description ILIKE $" + paramIndex + ")",
-        "%" + req.query.search + "%"
+        "(cp.name ILIKE $" + paramIndex + " OR cp.description ILIKE $" + paramIndex + ")",
+        searchTerm
       )
+    }
+
+    // Filtrage par couleur et taille
+    if (req.query.color) {
+      addCondition("EXISTS (SELECT 1 FROM corner_product_variants cpv WHERE cpv.corner_product_id = cp.id AND cpv.couleur = $" + paramIndex + " AND cpv.active = true)", req.query.color)
+    }
+
+    if (req.query.size) {
+      addCondition("EXISTS (SELECT 1 FROM corner_product_variants cpv WHERE cpv.corner_product_id = cp.id AND cpv.taille = $" + paramIndex + " AND cpv.active = true)", req.query.size)
     }
 
     // Vérification du stock disponible
     if (req.query.inStock === 'true') {
-      whereConditions.push("(variants IS NULL OR EXISTS (SELECT 1 FROM jsonb_array_elements(variants) v WHERE (v->>'stock')::int > 0))")
+      whereConditions.push("EXISTS (SELECT 1 FROM corner_product_variants cpv WHERE cpv.corner_product_id = cp.id AND cpv.stock > 0 AND cpv.active = true)")
     }
 
     // Détermination du tri
-    const sortColumn = req.query.sort === "price" ? "price::numeric" : "name"
+    const sortColumn = req.query.sort === "price" ? "cp.price::numeric" : "cp.name"
     const sortOrder = req.query.order === "desc" ? "DESC" : "ASC"
 
     // Construction de la requête SQL
-    let query = "SELECT *, variants FROM corner_products"
-    if (whereConditions.length > 0) {
-      query += " WHERE " + whereConditions.join(" AND ")
-    }
-    query += ` ORDER BY ${sortColumn} ${sortOrder} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`
+    const query = `
+      WITH product_data AS (
+        SELECT 
+          cp.*,
+          json_agg(
+            json_build_object(
+              'id', cpv.id,
+              'taille', cpv.taille,
+              'couleur', cpv.couleur,
+              'stock', cpv.stock,
+              'price', cpv.price
+            )
+          ) FILTER (WHERE cpv.id IS NOT NULL) as variants
+        FROM corner_products cp
+        LEFT JOIN corner_product_variants cpv ON cp.id = cpv.corner_product_id AND cpv.active = true
+        WHERE ${whereConditions.join(" AND ")}
+        GROUP BY cp.id
+      )
+      SELECT *
+      FROM product_data
+      ORDER BY ${sortColumn} ${sortOrder}
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `
 
-    // Exécution des requêtes
-    const { rows } = await pool.query(query, [...queryParams, limit, offset])
-    
-    let countQuery = "SELECT COUNT(*) FROM corner_products"
-    if (whereConditions.length > 0) {
-      countQuery += " WHERE " + whereConditions.join(" AND ")
-    }
-    const { rows: countRows } = await pool.query(countQuery, queryParams)
-    const totalCount = Number.parseInt(countRows[0].count)
+    const countQuery = `
+      SELECT COUNT(DISTINCT cp.id)
+      FROM corner_products cp
+      LEFT JOIN corner_product_variants cpv ON cp.id = cpv.corner_product_id AND cpv.active = true
+      WHERE ${whereConditions.join(" AND ")}
+    `
+
+    const [products, count] = await Promise.all([
+      pool.query(query, [...queryParams, limit, offset]),
+      pool.query(countQuery, queryParams)
+    ])
 
     return {
-      data: rows,
+      data: products.rows.map(product => ({
+        ...product,
+        variants: product.variants || []
+      })),
       pagination: {
         currentPage: page,
         pageSize: limit,
-        totalItems: totalCount,
-        totalPages: Math.ceil(totalCount / limit),
-      },
+        totalItems: parseInt(count.rows[0].count),
+        totalPages: Math.ceil(parseInt(count.rows[0].count) / limit)
+      }
     }
   }
 
   // Récupérer un produit de The Corner par ID
   static async getCornerProductById(id) {
-    const { rows } = await pool.query(
-      "SELECT cp.*, COALESCE(json_agg(r.*) FILTER (WHERE r.id IS NOT NULL), '[]') as reviews " +
-      "FROM corner_products cp " +
-      "LEFT JOIN reviews r ON r.corner_product_id = cp.id " +
-      "WHERE cp.id = $1 AND cp.active = true " +
-      "GROUP BY cp.id",
-      [id]
-    )
+    const query = `
+      SELECT 
+        cp.*,
+        json_agg(
+          json_build_object(
+            'id', cpv.id,
+            'taille', cpv.taille,
+            'couleur', cpv.couleur,
+            'stock', cpv.stock,
+            'price', cpv.price
+          )
+        ) FILTER (WHERE cpv.id IS NOT NULL) as variants
+      FROM corner_products cp
+      LEFT JOIN corner_product_variants cpv ON cp.id = cpv.corner_product_id AND cpv.active = true
+      WHERE cp.id = $1 AND cp.active = true
+      GROUP BY cp.id
+    `
 
+    const { rows } = await pool.query(query, [id])
+    
     if (rows.length === 0) {
-      throw new AppError("Produit The Corner non trouvé", 404)
+      throw new AppError("Produit non trouvé", 404)
     }
-    return rows[0]
+
+    return {
+      ...rows[0],
+      variants: rows[0].variants || []
+    }
   }
 
   // Créer un nouveau produit The Corner
@@ -171,7 +220,6 @@ class CornerProductController {
         category_id: data.category_id,
         brand_id: data.brand_id,
         brand: data.brand?.trim(),
-        variants: JSON.stringify(variants),
         featured: Boolean(data.featured),
         active: true,
         new: Boolean(data.new),
@@ -204,7 +252,22 @@ class CornerProductController {
       `;
 
       const { rows } = await pool.query(query, values);
-      return rows[0];
+
+      // Création des variants si fournis
+      if (data.variants && Array.isArray(data.variants)) {
+        await Promise.all(
+          data.variants.map(variant => 
+            CornerProductVariant.create({
+              ...variant,
+              corner_product_id: rows[0].id,
+              product_name: rows[0].name
+            })
+          )
+        );
+      }
+
+      // Récupérer le produit avec ses variants
+      return await CornerProductController.getCornerProductById(rows[0].id);
     } catch (error) {
       // Si une erreur survient, supprimer les images uploadées
       if (error.uploadedImages) {
@@ -246,7 +309,6 @@ class CornerProductController {
       const updateData = {
         ...data,
         ...priceData,
-        variants: JSON.stringify(variants),
         updated_at: new Date()
       };
 
@@ -282,7 +344,28 @@ class CornerProductController {
       const values = [...Object.values(updateData), id];
       const { rows } = await pool.query(query, values);
 
-      return rows[0];
+      // Mise à jour des variants si fournis
+      if (data.variants && Array.isArray(data.variants)) {
+        // Supprimer les variants existants
+        await pool.query(
+          'UPDATE corner_product_variants SET active = false WHERE corner_product_id = $1',
+          [id]
+        );
+
+        // Créer les nouveaux variants
+        await Promise.all(
+          data.variants.map(variant => 
+            CornerProductVariant.create({
+              ...variant,
+              corner_product_id: id,
+              product_name: rows[0].name
+            })
+          )
+        );
+      }
+
+      // Récupérer le produit mis à jour avec ses variants
+      return await CornerProductController.getCornerProductById(id);
     } catch (error) {
       if (error.uploadedImages) {
         await Promise.all(
