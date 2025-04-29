@@ -215,7 +215,7 @@ router.post('/favorites', authMiddleware, async (req, res) => {
         console.log('User:', req.user);
         console.log('Body:', req.body);
         
-        const { product_id } = req.body;
+        const { product_id, is_corner_product } = req.body;
         const userId = req.user.id;
 
         if (!product_id) {
@@ -229,8 +229,8 @@ router.post('/favorites', authMiddleware, async (req, res) => {
         }
 
         const { rows } = await pool.query(
-            'INSERT INTO favorites (user_id, product_id) VALUES ($1, $2) RETURNING *',
-            [userId, product_id]
+            'INSERT INTO favorites (user_id, product_id, is_corner_product) VALUES ($1, $2, $3) RETURNING *',
+            [userId, product_id, is_corner_product || false]
         );
 
         console.log('Résultat de l\'insertion:', rows[0]);
@@ -249,11 +249,12 @@ router.post('/favorites', authMiddleware, async (req, res) => {
 router.delete('/favorites/:productId', authMiddleware, async (req, res) => {
     try {
         const { productId } = req.params;
+        const { is_corner_product } = req.query;
         const userId = req.user.id;
 
         const { rows } = await pool.query(
-            'DELETE FROM favorites WHERE user_id = $1 AND product_id = $2 RETURNING *',
-            [userId, productId]
+            'DELETE FROM favorites WHERE user_id = $1 AND product_id = $2 AND is_corner_product = $3 RETURNING *',
+            [userId, productId, is_corner_product || false]
         );
 
         if (rows.length === 0) {

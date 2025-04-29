@@ -49,6 +49,8 @@ function produit_existe() {
 # Fonction pour ajouter des variants
 function ajouter_variants() {
     local produit_id="$1"
+    local variants=()
+    local continue_adding="y"
     
     echo -e "\n${YELLOW}${BOLD}=== AJOUTER DES VARIANTS ? ===${RESET}"
     echo -e "${CYAN}1. Oui, ajouter des variants${RESET}"
@@ -57,59 +59,70 @@ function ajouter_variants() {
     read -p "Votre choix (1-2): " choix_variants
     
     if [ "$choix_variants" -eq 1 ]; then
-        local continuer=true
-        local compteur=0
-        
-        while $continuer; do
-            echo -e "\n${CYAN}=== Variant #$((compteur+1)) ===${RESET}"
+        while [[ "$continue_adding" == "y" ]]; do
+            echo -e "\n${GREEN}Nouveau variant :${RESET}"
             
-            # Obtenir les détails du variant
-            read -p "Taille (ex: EU 42): " taille
-            read -p "Couleur: " couleur
+            read -p "Couleur: " color
+            read -p "Taille: " size
             read -p "Stock: " stock
-            read -p "Prix spécifique (laisser vide pour utiliser le prix du produit): " prix_variant
             
-            # Vérifier que le stock est un nombre
+            # Validation du stock (doit être un nombre)
             if ! [[ "$stock" =~ ^[0-9]+$ ]]; then
-                echo -e "${RED}Erreur: Le stock doit être un nombre entier.${RESET}"
+                echo -e "${RED}Le stock doit être un nombre entier${RESET}"
                 continue
             fi
             
-            # Vérifier que le prix est un nombre si fourni
-            if [ ! -z "$prix_variant" ] && ! [[ "$prix_variant" =~ ^[0-9]+(\.[0-9]{1,2})?$ ]]; then
-                echo -e "${RED}Erreur: Le prix doit être un nombre (ex: 99.99).${RESET}"
-                continue
-            fi
+            # Ajouter le variant au tableau
+            variants+=("{\"color\": \"$color\", \"size\": \"$size\", \"stock\": $stock}")
             
-            # Créer le variant dans la table corner_product_variants
-            local variant_query="INSERT INTO corner_product_variants 
-                (corner_product_id, taille, couleur, stock, product_name, store_reference, category_id, brand_id, price, active) 
-                SELECT $produit_id, '$taille', '$couleur', $stock, name, store_reference, category_id, brand_id, 
-                ${prix_variant:-price}, true 
-                FROM corner_products WHERE id = $produit_id RETURNING id"
-            
-            local variant_id=$(executer_sql "$variant_query")
-            
-            if [ -z "$variant_id" ]; then
-                echo -e "${RED}Erreur lors de la création du variant.${RESET}"
-                continue
-            fi
-            
-            echo -e "${GREEN}Variant créé avec succès! ID: $variant_id${RESET}"
-            compteur=$((compteur+1))
-            
-            # Demander si l'utilisateur veut ajouter un autre variant
-            read -p "Voulez-vous ajouter un autre variant? (o/n): " reponse
-            if [[ "$reponse" != "o"* ]]; then
-                continuer=false
-            fi
+            read -p "Ajouter un autre variant? (y/n): " continue_adding
         done
         
-        if [ $compteur -gt 0 ]; then
-            # Mettre à jour has_variants sur le produit
-            executer_sql "UPDATE corner_products SET has_variants = true WHERE id = $produit_id"
-            echo -e "${GREEN}$compteur variant(s) ajouté(s) avec succès!${RESET}"
-        fi
+        # Construire le tableau JSON de variants
+        local variants_json="["
+        for i in "${!variants[@]}"; do
+            if [ $i -gt 0 ]; then
+                variants_json+=","
+            fi
+            variants_json+="${variants[$i]}"
+        done
+        variants_json+="]"
+        
+        # Mettre à jour les variants dans la base de données
+        executer_sql "UPDATE corner_products SET variants = '$variants_json'::jsonb WHERE id = $produit_id;"
+        
+        # Créer les variants dans la table corner_product_variants
+        for variant in "${variants[@]}"; do
+            executer_sql "
+                INSERT INTO corner_product_variants (
+                    corner_product_id,
+                    taille,
+                    couleur,
+                    stock,
+                    price,
+                    product_name,
+                    store_reference,
+                    category_id,
+                    brand_id,
+                    active
+                )
+                SELECT 
+                    $produit_id,
+                    ($variant->>'size')::text,
+                    ($variant->>'color')::text,
+                    ($variant->>'stock')::integer,
+                    p.price,
+                    p.name,
+                    p.store_reference,
+                    p.category_id,
+                    p.brand_id,
+                    p.active
+                FROM corner_products p
+                WHERE p.id = $produit_id;
+            "
+        done
+        
+        echo -e "${GREEN}Variants ajoutés avec succès!${RESET}"
     else
         echo -e "${BLUE}Aucun variant ajouté.${RESET}"
     fi
