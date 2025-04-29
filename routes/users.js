@@ -246,15 +246,18 @@ router.post('/favorites', authMiddleware, async (req, res) => {
     }
 });
 
-router.delete('/favorites/:productId', authMiddleware, async (req, res) => {
+router.delete('/favorites', authMiddleware, async (req, res) => {
     try {
-        const { productId } = req.params;
-        const { is_corner_product } = req.query;
+        const { product_id, is_corner_product } = req.query;
         const userId = req.user.id;
+
+        if (!product_id) {
+            return res.status(400).json({ message: 'product_id est requis' });
+        }
 
         const { rows } = await pool.query(
             'DELETE FROM favorites WHERE user_id = $1 AND product_id = $2 AND is_corner_product = $3 RETURNING *',
-            [userId, productId, is_corner_product || false]
+            [userId, product_id, is_corner_product || false]
         );
 
         if (rows.length === 0) {
