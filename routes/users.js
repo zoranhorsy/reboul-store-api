@@ -172,34 +172,44 @@ router.get('/favorites', authMiddleware, async (req, res) => {
             });
         }
 
-        // Récupérer les favoris avec les produits des deux tables
-        const { rows } = await pool.query(`
+        // Récupérer les favoris des produits normaux
+        const regularProducts = await pool.query(`
             SELECT 
                 f.id as favorite_id,
                 f.is_corner_product,
                 f.created_at as favorited_at,
-                CASE 
-                    WHEN f.is_corner_product THEN cp.*
-                    ELSE p.*
-                END as product_data
+                p.*
             FROM favorites f
-            LEFT JOIN products p ON f.product_id = p.id
-            LEFT JOIN corner_products cp ON f.corner_product_id = cp.id
-            WHERE f.user_id = $1
-            ORDER BY f.created_at DESC
+            JOIN products p ON f.product_id = p.id
+            WHERE f.user_id = $1 AND f.is_corner_product = false
         `, [userId]);
 
-        console.log('Favoris trouvés:', rows.length);
-        
-        // Transformer les données pour le frontend
-        const formattedFavorites = rows.map(row => ({
-            ...row.product_data,
-            is_corner_product: row.is_corner_product,
-            favorited_at: row.favorited_at,
-            favorite_id: row.favorite_id
-        }));
+        // Récupérer les favoris des produits The Corner
+        const cornerProducts = await pool.query(`
+            SELECT 
+                f.id as favorite_id,
+                f.is_corner_product,
+                f.created_at as favorited_at,
+                cp.*
+            FROM favorites f
+            JOIN corner_products cp ON f.corner_product_id = cp.id
+            WHERE f.user_id = $1 AND f.is_corner_product = true
+        `, [userId]);
 
-        res.json(formattedFavorites);
+        // Combiner les résultats
+        const allProducts = [
+            ...regularProducts.rows.map(row => ({
+                ...row,
+                is_corner_product: false
+            })),
+            ...cornerProducts.rows.map(row => ({
+                ...row,
+                is_corner_product: true
+            }))
+        ].sort((a, b) => new Date(b.favorited_at).getTime() - new Date(a.favorited_at).getTime());
+
+        console.log('Favoris trouvés:', allProducts.length);
+        res.json(allProducts);
     } catch (error) {
         console.error('Erreur détaillée lors de la récupération des favoris:', error);
         res.status(500).json({ 
