@@ -233,12 +233,13 @@ router.post('/favorites', authMiddleware, async (req, res) => {
         console.log('User:', req.user);
         console.log('Body:', req.body);
         
-        const { product_id, is_corner_product } = req.body;
+        const { product_id, corner_product_id, is_corner_product } = req.body;
         const userId = req.user.id;
 
-        if (!product_id) {
-            console.log('Erreur: product_id manquant');
-            return res.status(400).json({ message: 'product_id est requis' });
+        // Vérifier qu'au moins un ID est fourni
+        if (!product_id && !corner_product_id) {
+            console.log('Erreur: aucun ID de produit fourni');
+            return res.status(400).json({ message: 'Un ID de produit est requis' });
         }
 
         if (!userId) {
@@ -246,12 +247,20 @@ router.post('/favorites', authMiddleware, async (req, res) => {
             return res.status(400).json({ message: 'Utilisateur non authentifié' });
         }
 
-        // Vérifier d'abord si le produit existe dans la bonne table
+        // Vérifier la cohérence des données
+        if (is_corner_product && !corner_product_id) {
+            return res.status(400).json({ message: 'corner_product_id est requis pour un produit The Corner' });
+        }
+        if (!is_corner_product && !product_id) {
+            return res.status(400).json({ message: 'product_id est requis pour un produit normal' });
+        }
+
+        // Vérifier si le produit existe dans la bonne table
         const productExists = await pool.query(
             is_corner_product 
                 ? 'SELECT id FROM corner_products WHERE id = $1'
                 : 'SELECT id FROM products WHERE id = $1',
-            [product_id]
+            [is_corner_product ? corner_product_id : product_id]
         );
 
         if (productExists.rows.length === 0) {
@@ -278,7 +287,7 @@ router.post('/favorites', authMiddleware, async (req, res) => {
             [
                 userId,
                 is_corner_product ? null : product_id,
-                is_corner_product ? product_id : null,
+                is_corner_product ? corner_product_id : null,
                 is_corner_product || false
             ]
         );
