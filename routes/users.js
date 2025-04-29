@@ -327,16 +327,27 @@ router.delete('/favorites', authMiddleware, async (req, res) => {
             return res.status(400).json({ message: 'product_id est requis' });
         }
 
+        // Supprimer le favori en tenant compte du type de produit
         const { rows } = await pool.query(
-            'DELETE FROM favorites WHERE user_id = $1 AND product_id = $2 AND is_corner_product = $3 RETURNING *',
-            [userId, product_id, is_corner_product || false]
+            `DELETE FROM favorites 
+            WHERE user_id = $1 
+            AND (
+                (is_corner_product = true AND corner_product_id = $2) OR
+                (is_corner_product = false AND product_id = $2)
+            )
+            RETURNING *`,
+            [userId, product_id]
         );
 
         if (rows.length === 0) {
             return res.status(404).json({ message: 'Favori non trouvé' });
         }
 
-        res.json({ message: 'Produit retiré des favoris' });
+        res.json({ 
+            success: true,
+            message: 'Produit retiré des favoris',
+            data: rows[0]
+        });
     } catch (error) {
         console.error('Erreur lors de la suppression des favoris:', error);
         res.status(500).json({ message: 'Erreur serveur' });
