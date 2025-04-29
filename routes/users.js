@@ -172,16 +172,34 @@ router.get('/favorites', authMiddleware, async (req, res) => {
             });
         }
 
+        // Récupérer les favoris avec les produits des deux tables
         const { rows } = await pool.query(`
-            SELECT p.*, f.created_at as favorited_at
+            SELECT 
+                f.id as favorite_id,
+                f.is_corner_product,
+                f.created_at as favorited_at,
+                CASE 
+                    WHEN f.is_corner_product THEN cp.*
+                    ELSE p.*
+                END as product_data
             FROM favorites f
-            JOIN products p ON f.product_id = p.id
+            LEFT JOIN products p ON f.product_id = p.id
+            LEFT JOIN corner_products cp ON f.corner_product_id = cp.id
             WHERE f.user_id = $1
             ORDER BY f.created_at DESC
         `, [userId]);
 
         console.log('Favoris trouvés:', rows.length);
-        res.json(rows);
+        
+        // Transformer les données pour le frontend
+        const formattedFavorites = rows.map(row => ({
+            ...row.product_data,
+            is_corner_product: row.is_corner_product,
+            favorited_at: row.favorited_at,
+            favorite_id: row.favorite_id
+        }));
+
+        res.json(formattedFavorites);
     } catch (error) {
         console.error('Erreur détaillée lors de la récupération des favoris:', error);
         res.status(500).json({ 
@@ -228,13 +246,48 @@ router.post('/favorites', authMiddleware, async (req, res) => {
             return res.status(400).json({ message: 'Utilisateur non authentifié' });
         }
 
+        // Vérifier d'abord si le produit existe dans la bonne table
+        const productExists = await pool.query(
+            is_corner_product 
+                ? 'SELECT id FROM corner_products WHERE id = $1'
+                : 'SELECT id FROM products WHERE id = $1',
+            [product_id]
+        );
+
+        if (productExists.rows.length === 0) {
+            return res.status(404).json({ 
+                message: is_corner_product 
+                    ? 'Produit The Corner non trouvé' 
+                    : 'Produit non trouvé'
+            });
+        }
+
+        // Insérer dans la table favorites avec la nouvelle structure
         const { rows } = await pool.query(
-            'INSERT INTO favorites (user_id, product_id, is_corner_product) VALUES ($1, $2, $3) RETURNING *',
-            [userId, product_id, is_corner_product || false]
+            `INSERT INTO favorites (
+                user_id, 
+                product_id, 
+                corner_product_id, 
+                is_corner_product
+            ) VALUES (
+                $1, 
+                $2,
+                $3,
+                $4
+            ) RETURNING *`,
+            [
+                userId,
+                is_corner_product ? null : product_id,
+                is_corner_product ? product_id : null,
+                is_corner_product || false
+            ]
         );
 
         console.log('Résultat de l\'insertion:', rows[0]);
-        res.status(201).json(rows[0]);
+        res.status(201).json({
+            success: true,
+            data: rows[0]
+        });
     } catch (error) {
         console.error('Erreur détaillée lors de l\'ajout aux favoris:', error);
         if (error.code === '23505') {

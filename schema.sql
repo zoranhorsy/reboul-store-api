@@ -105,10 +105,11 @@ CREATE TABLE reviews (
 );
 
 -- Création de la table favorites
-CREATE TABLE favorites (
+CREATE TABLE IF NOT EXISTS favorites (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+    is_corner_product BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(user_id, product_id)
 );
