@@ -113,26 +113,43 @@ class ProductController {
   // Récupérer tous les produits avec filtrage
   static async getAllProducts(req) {
     const page = Number.parseInt(req.query.page) || 1
-    const limit = Number.parseInt(req.query.limit) || 50
+    const limit = Number.parseInt(req.query.limit) || 10
     const offset = (page - 1) * limit
-    
-    // Extraction des champs demandés s'ils existent
-    const fields = req.query.fields ? req.query.fields.split(',') : null;
 
+    // Extraction des champs demandés pour optimiser la taille de la réponse
+    let fields = null;
+    if (req.query.fields) {
+      fields = req.query.fields.split(',');
+    }
+
+    // Système de cache pour les requêtes populaires
+    // Génération d'une clé de cache basée sur les paramètres de la requête
+    const cacheKey = generateCacheKey(req.query);
+    
+    // Vérifier si la réponse est en cache
+    const cachedResult = await getCachedResult(cacheKey);
+    if (cachedResult) {
+      console.log("Cache hit for products query:", cacheKey);
+      return cachedResult;
+    }
+
+    console.log("Cache miss for products query:", cacheKey);
+
+    // Construction des conditions WHERE
+    const whereConditions = ["_actiontype IS DISTINCT FROM 'hardDelete'", "_actiontype IS DISTINCT FROM 'delete'", "_actiontype IS DISTINCT FROM 'permDelete'", "deleted IS DISTINCT FROM true"]
     const queryParams = []
-    const whereConditions = []
     let paramIndex = 1
 
-    // Fonction pour ajouter une condition
+    // Helper pour ajouter des conditions
     const addCondition = (condition, value) => {
       whereConditions.push(condition)
       queryParams.push(value)
-      return paramIndex++
+      paramIndex++
     }
 
-    // Ajout des conditions de filtrage
+    // Filtres dynamiques
     if (req.query.category_id) {
-      addCondition("category_id = $" + paramIndex, Number.parseInt(req.query.category_id))
+      addCondition("category_id = $" + paramIndex, req.query.category_id)
     }
 
     // Utiliser brand_id comme filtre principal pour la marque
@@ -213,7 +230,7 @@ class ProductController {
     // Optimisation des données retournées
     const optimizedData = rows.map(product => optimizeProductFields(product, fields));
 
-    return {
+    const result = {
       data: optimizedData,
       pagination: {
         currentPage: page,
@@ -221,7 +238,12 @@ class ProductController {
         totalItems: totalCount,
         totalPages: Math.ceil(totalCount / limit),
       },
-    }
+    };
+
+    // Stocker le résultat dans le cache
+    await cacheResult(cacheKey, result);
+
+    return result;
   }
 
   // Récupérer un produit par ID
@@ -586,6 +608,65 @@ class ProductController {
       console.error("Erreur lors de la correction des images:", error);
       throw new AppError("Erreur lors de la correction des images", 500);
     }
+  }
+}
+
+/**
+ * Génère une clé de cache unique basée sur les paramètres de requête
+ * @param {Object} params - Paramètres de la requête
+ * @returns {string} - Clé de cache
+ */
+function generateCacheKey(params) {
+  // Trier les clés pour assurer une cohérence des clés de cache
+  const sortedParams = Object.keys(params).sort().reduce((acc, key) => {
+    acc[key] = params[key];
+    return acc;
+  }, {});
+  
+  return `products_${JSON.stringify(sortedParams)}`;
+}
+
+/**
+ * Récupère un résultat en cache
+ * @param {string} key - Clé de cache
+ * @returns {Promise<Object|null>} - Résultat en cache ou null
+ */
+async function getCachedResult(key) {
+  try {
+    const { rows } = await pool.query(`
+      SELECT data FROM api_cache 
+      WHERE cache_key = $1 
+      AND created_at >= NOW() - INTERVAL '10 minutes'
+    `, [key]);
+
+    if (rows.length > 0) {
+      return rows[0].data;
+    }
+    return null;
+  } catch (error) {
+    console.error("Erreur lors de la récupération du cache:", error);
+    return null;
+  }
+}
+
+/**
+ * Stocke un résultat dans le cache
+ * @param {string} key - Clé de cache
+ * @param {Object} data - Données à mettre en cache
+ * @returns {Promise<void>}
+ */
+async function cacheResult(key, data) {
+  try {
+    await pool.query(`
+      INSERT INTO api_cache (cache_key, data)
+      VALUES ($1, $2)
+      ON CONFLICT (cache_key)
+      DO UPDATE SET 
+        data = $2,
+        created_at = CURRENT_TIMESTAMP
+    `, [key, data]);
+  } catch (error) {
+    console.error("Erreur lors de la mise en cache:", error);
   }
 }
 

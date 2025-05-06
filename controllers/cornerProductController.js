@@ -104,11 +104,40 @@ class CornerProductController {
   static async getAllCornerProducts(req) {
     try {
       const page = Number.parseInt(req.query.page) || 1
-      const limit = Number.parseInt(req.query.limit) || 50
+      const limit = Number.parseInt(req.query.limit) || 10
       const offset = (page - 1) * limit
       
-      // Extraction des champs demandés s'ils existent
-      const fields = req.query.fields ? req.query.fields.split(',') : null;
+      // Extraction des champs demandés
+      let fields = null
+      if (req.query.fields) {
+        fields = req.query.fields.split(',')
+      }
+
+      // Système de cache pour les requêtes populaires
+      // Génération d'une clé de cache basée sur les paramètres de la requête
+      const cacheKey = `corner_products_${JSON.stringify(Object.keys(req.query).sort().reduce((acc, key) => {
+        acc[key] = req.query[key];
+        return acc;
+      }, {}))}`;
+      
+      // Vérifier si la réponse est en cache
+      try {
+        const { rows } = await pool.query(`
+          SELECT data FROM api_cache 
+          WHERE cache_key = $1 
+          AND created_at >= NOW() - INTERVAL '10 minutes'
+        `, [cacheKey]);
+
+        if (rows.length > 0) {
+          console.log("Cache hit for corner products query:", cacheKey);
+          return rows[0].data;
+        }
+      } catch (error) {
+        console.error("Erreur lors de la récupération du cache:", error);
+        // Continuer sans le cache en cas d'erreur
+      }
+
+      console.log("Cache miss for corner products query:", cacheKey);
 
       const queryParams = []
       const whereConditions = ["corner_products.active = true"]
@@ -210,7 +239,7 @@ class CornerProductController {
       // Optimiser les données en fonction des champs demandés
       const optimizedData = products.rows.map(product => optimizeCornerProductFields(product, fields));
 
-      return {
+      const result = {
         data: optimizedData,
         pagination: {
           currentPage: page,
@@ -218,10 +247,27 @@ class CornerProductController {
           totalItems: parseInt(count.rows[0].count),
           totalPages: Math.ceil(parseInt(count.rows[0].count) / limit)
         }
+      };
+
+      // Stocker le résultat dans le cache
+      try {
+        await pool.query(`
+          INSERT INTO api_cache (cache_key, data)
+          VALUES ($1, $2)
+          ON CONFLICT (cache_key)
+          DO UPDATE SET 
+            data = $2,
+            created_at = CURRENT_TIMESTAMP
+        `, [cacheKey, result]);
+      } catch (error) {
+        console.error("Erreur lors de la mise en cache:", error);
+        // Continuer sans mise en cache en cas d'erreur
       }
+
+      return result;
     } catch (error) {
-      console.error('Erreur dans getAllCornerProducts:', error);
-      throw error;
+      console.error("Error fetching corner products:", error)
+      throw error
     }
   }
 
