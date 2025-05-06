@@ -56,7 +56,7 @@ class CornerProductController {
       const offset = (page - 1) * limit
 
       const queryParams = []
-      const whereConditions = ["corner_products.active = true"]
+      const whereConditions = ["active = true"]
       let paramIndex = 1
 
       // Fonction pour ajouter une condition
@@ -68,95 +68,89 @@ class CornerProductController {
 
       // Ajout des conditions de filtrage
       if (req.query.category_id) {
-        addCondition("corner_products.category_id = $" + paramIndex, Number.parseInt(req.query.category_id))
+        addCondition("category_id = $" + paramIndex, Number.parseInt(req.query.category_id))
       }
 
       if (req.query.brand_id) {
-        addCondition("corner_products.brand_id = $" + paramIndex, Number.parseInt(req.query.brand_id))
+        addCondition("brand_id = $" + paramIndex, Number.parseInt(req.query.brand_id))
       } else if (req.query.brand) {
-        addCondition("corner_products.brand = $" + paramIndex, req.query.brand)
+        addCondition("brand = $" + paramIndex, req.query.brand)
       }
 
       if (req.query.minPrice) {
-        addCondition("corner_products.price::numeric >= $" + paramIndex, Number.parseFloat(req.query.minPrice))
+        addCondition("price::numeric >= $" + paramIndex, Number.parseFloat(req.query.minPrice))
       }
 
       if (req.query.maxPrice) {
-        addCondition("corner_products.price::numeric <= $" + paramIndex, Number.parseFloat(req.query.maxPrice))
+        addCondition("price::numeric <= $" + paramIndex, Number.parseFloat(req.query.maxPrice))
       }
 
       if (req.query.featured !== undefined) {
-        addCondition("corner_products.featured = $" + paramIndex, req.query.featured === "true")
+        addCondition("featured = $" + paramIndex, req.query.featured === "true")
       }
 
       if (req.query.search) {
         const searchTerm = "%" + req.query.search + "%"
         addCondition(
-          "(corner_products.name ILIKE $" + paramIndex + " OR corner_products.description ILIKE $" + paramIndex + ")",
+          "(name ILIKE $" + paramIndex + " OR description ILIKE $" + paramIndex + ")",
           searchTerm
         )
       }
 
-      // Filtrage par couleur et taille
-      if (req.query.color) {
-        addCondition("EXISTS (SELECT 1 FROM corner_product_variants WHERE corner_product_variants.corner_product_id = corner_products.id AND corner_product_variants.couleur = $" + paramIndex + " AND corner_product_variants.active = true)", req.query.color)
-      }
-
-      if (req.query.size) {
-        addCondition("EXISTS (SELECT 1 FROM corner_product_variants WHERE corner_product_variants.corner_product_id = corner_products.id AND corner_product_variants.taille = $" + paramIndex + " AND corner_product_variants.active = true)", req.query.size)
-      }
-
-      // Vérification du stock disponible
-      if (req.query.inStock === 'true') {
-        whereConditions.push("EXISTS (SELECT 1 FROM corner_product_variants WHERE corner_product_variants.corner_product_id = corner_products.id AND corner_product_variants.stock > 0 AND corner_product_variants.active = true)")
-      }
+      // Note: Les filtres de variants ne sont pas implémentés dans cette version
+      // car nous utilisons directement la colonne variants de la table corner_products
 
       // Détermination du tri
-      const sortColumn = req.query.sort === "price" ? "corner_products.price::numeric" : "corner_products.name"
+      const sortColumn = req.query.sort === "price" ? "price::numeric" : "name"
       const sortOrder = req.query.order === "desc" ? "DESC" : "ASC"
 
-      // Construction de la requête SQL
+      // Construction de la requête SQL simplifiée
       const query = `
-        WITH product_data AS (
-          SELECT 
-            corner_products.*,
-            json_agg(
-              json_build_object(
-                'id', corner_product_variants.id,
-                'taille', corner_product_variants.taille,
-                'couleur', corner_product_variants.couleur,
-                'stock', corner_product_variants.stock,
-                'price', corner_product_variants.price
-              )
-            ) FILTER (WHERE corner_product_variants.id IS NOT NULL) as variants
-          FROM corner_products
-          LEFT JOIN corner_product_variants ON corner_products.id = corner_product_variants.corner_product_id AND corner_product_variants.active = true
-          WHERE ${whereConditions.join(" AND ")}
-          GROUP BY corner_products.id
-        )
-        SELECT *
-        FROM product_data
+        SELECT * 
+        FROM corner_products
+        WHERE ${whereConditions.join(" AND ")}
         ORDER BY ${sortColumn} ${sortOrder}
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
       `
 
       const countQuery = `
-        SELECT COUNT(DISTINCT corner_products.id)
+        SELECT COUNT(*) 
         FROM corner_products
-        LEFT JOIN corner_product_variants ON corner_products.id = corner_product_variants.corner_product_id AND corner_product_variants.active = true
         WHERE ${whereConditions.join(" AND ")}
       `
+
+      console.log("Query:", query);
+      console.log("QueryParams:", [...queryParams, limit, offset]);
 
       const [products, count] = await Promise.all([
         pool.query(query, [...queryParams, limit, offset]),
         pool.query(countQuery, queryParams)
       ])
 
-      return {
-        data: products.rows.map(product => ({
+      // S'assurer que variants est un tableau JSON valide
+      const processedProducts = products.rows.map(product => {
+        let variants = [];
+        if (product.variants) {
+          // Si variants est une chaîne JSON, la parser
+          if (typeof product.variants === 'string') {
+            try {
+              variants = JSON.parse(product.variants);
+            } catch (e) {
+              console.error('Erreur lors du parsing des variants:', e);
+            }
+          } else {
+            // Sinon, utiliser directement les variants
+            variants = product.variants;
+          }
+        }
+        return {
           ...product,
-          variants: product.variants || []
-        })),
+          variants: variants
+        };
+      });
+
+      return {
+        data: processedProducts,
         pagination: {
           currentPage: page,
           pageSize: limit,
@@ -173,21 +167,8 @@ class CornerProductController {
   // Récupérer un produit de The Corner par ID
   static async getCornerProductById(id) {
     const query = `
-      SELECT 
-        cp.*,
-        json_agg(
-          json_build_object(
-            'id', cpv.id,
-            'taille', cpv.taille,
-            'couleur', cpv.couleur,
-            'stock', cpv.stock,
-            'price', cpv.price
-          )
-        ) FILTER (WHERE cpv.id IS NOT NULL) as variants
-      FROM corner_products cp
-      LEFT JOIN corner_product_variants cpv ON cp.id = cpv.corner_product_id AND cpv.active = true
-      WHERE cp.id = $1 AND cp.active = true
-      GROUP BY cp.id
+      SELECT * FROM corner_products
+      WHERE id = $1 AND active = true
     `
 
     const { rows } = await pool.query(query, [id])
@@ -196,9 +177,25 @@ class CornerProductController {
       throw new AppError("Produit non trouvé", 404)
     }
 
+    // S'assurer que variants est un tableau JSON valide
+    let variants = [];
+    if (rows[0].variants) {
+      // Si variants est une chaîne JSON, la parser
+      if (typeof rows[0].variants === 'string') {
+        try {
+          variants = JSON.parse(rows[0].variants);
+        } catch (e) {
+          console.error('Erreur lors du parsing des variants:', e);
+        }
+      } else {
+        // Sinon, utiliser directement les variants
+        variants = rows[0].variants;
+      }
+    }
+
     return {
       ...rows[0],
-      variants: rows[0].variants || []
+      variants: variants
     }
   }
 
