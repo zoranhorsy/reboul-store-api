@@ -30,28 +30,6 @@ const variantValidation = [
   body("variants.*.stock").optional().isInt({ min: 0 }).withMessage("Le stock doit être un nombre positif"),
 ]
 
-// GET tous les produits The Corner
-router.get("/", async (req, res) => {
-  try {
-    const { rows } = await pool.query("SELECT * FROM corner_products WHERE active = true")
-    res.json({
-      data: rows,
-      pagination: {
-        currentPage: 1,
-        pageSize: rows.length,
-        totalItems: rows.length,
-        totalPages: 1
-      }
-    })
-  } catch (error) {
-    console.error('Erreur dans GET /corner-products:', error)
-    res.status(500).json({
-      status: 'error',
-      message: error.message
-    })
-  }
-})
-
 // GET tous les produits The Corner avec filtrage
 router.get(
   "/",
@@ -68,13 +46,18 @@ router.get(
     query("sort").optional().isIn(["name", "price"]).withMessage("Le tri doit être soit par nom, soit par prix"),
     query("order").optional().isIn(["asc", "desc"]).withMessage("L'ordre doit être asc ou desc"),
     query("inStock").optional().isBoolean(),
+    query("fields").optional().isString().withMessage("Le format de fields doit être une chaîne de caractères (ex: 'id,name,price')"),
   ],
   validateRequest,
   async (req, res, next) => {
     try {
+      console.log('--- REQUÊTE GET /api/corner-products REÇUE ---')
+      console.log('Query params:', req.query)
+      
       const result = await CornerProductController.getAllCornerProducts(req)
       res.json(result)
     } catch (error) {
+      console.error('Erreur dans GET /corner-products:', error)
       next(error)
     }
   }

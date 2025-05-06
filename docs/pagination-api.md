@@ -32,6 +32,8 @@ Pour réduire la taille des réponses, vous pouvez spécifier exactement quels c
 GET /api/products?fields=id,name,price
 ```
 
+#### Produits standards (api/products)
+
 **Champs disponibles pour les produits:**
 - `id` - Identifiant unique du produit
 - `name` - Nom du produit
@@ -58,6 +60,35 @@ GET /api/products?fields=id,name,price
 - `reviews_count` - Nombre d'avis
 - `created_at` - Date de création
 - `sku` - Référence unique du produit
+
+#### Produits The Corner (api/corner-products)
+
+**Champs disponibles pour les produits Corner:**
+- `id` - Identifiant unique du produit
+- `name` - Nom du produit
+- `description` - Description détaillée
+- `price` - Prix actuel du produit
+- `old_price` - Ancien prix (pour les promotions)
+- `category_id` - ID de la catégorie
+- `brand` - Nom de la marque
+- `brand_id` - ID de la marque
+- `image_url` - URL de l'image principale
+- `images` - Tableau des URLs d'images additionnelles
+- `variants` - Tableau des variantes (tailles, couleurs, stock)
+- `tags` - Tableau des tags associés
+- `details` - Tableau des détails du produit
+- `featured` - Produit mis en avant (boolean)
+- `active` - Produit actif (boolean)
+- `new` - Produit nouveau (boolean)
+- `sku` - Référence unique du produit
+- `store_reference` - Référence du magasin
+- `material` - Matériau du produit
+- `weight` - Poids du produit
+- `dimensions` - Dimensions du produit
+- `rating` - Note moyenne du produit
+- `reviews_count` - Nombre d'avis
+- `created_at` - Date de création
+- `updated_at` - Date de dernière mise à jour
 
 **Par défaut, tous les champs sont retournés** sauf si vous spécifiez le paramètre `fields`.
 
@@ -111,6 +142,18 @@ GET /api/products?search=sneakers&category_id=5&fields=id,name,price,image_url,v
 GET /api/products?fields=id,name,variants
 ```
 
+### 5. Liste de produits The Corner avec pagination
+
+```
+GET /api/corner-products?page=1&limit=10
+```
+
+### 6. Liste de produits The Corner avec champs spécifiques
+
+```
+GET /api/corner-products?fields=id,name,price,old_price,image_url,variants
+```
+
 ## Bonnes Pratiques
 
 1. **Pour les vues catalogue**: Utilisez uniquement les champs nécessaires à l'affichage des vignettes:
@@ -123,9 +166,14 @@ GET /api/products?fields=id,name,variants
    fields=id,name,price,description,image_url,images,variants,brand,tags,details,material,dimensions
    ```
 
-3. **Limiter le nombre d'éléments par page** à ce qui est nécessaire pour l'UI
-4. **Utiliser les filtres côté serveur** plutôt que de filtrer côté client
-5. **Mettre en cache les résultats** quand c'est possible
+3. **Pour The Corner**: Pour les vues catalogue:
+   ```
+   fields=id,name,price,old_price,image_url,variants,brand,featured,new
+   ```
+
+4. **Limiter le nombre d'éléments par page** à ce qui est nécessaire pour l'UI
+5. **Utiliser les filtres côté serveur** plutôt que de filtrer côté client
+6. **Mettre en cache les résultats** quand c'est possible
 
 ## Codes de Statut HTTP
 

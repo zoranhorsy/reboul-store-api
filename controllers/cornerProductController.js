@@ -47,6 +47,58 @@ const validateVariants = (variants) => {
   });
 }
 
+// Fonction pour optimiser les champs des produits de The Corner
+const optimizeCornerProductFields = (product, fields = null) => {
+  // Traitement des variants si nécessaire (ils devraient déjà être au format JSON depuis la requête SQL)
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  
+  // Structure complète basée sur le schéma de BDD corner_products
+  const baseFields = {
+    id: product.id,
+    name: product.name || '',
+    description: product.description || '',
+    price: typeof product.price === 'string' ? parseFloat(product.price) : (product.price || 0),
+    old_price: product.old_price ? (typeof product.old_price === 'string' ? parseFloat(product.old_price) : product.old_price) : null,
+    category_id: product.category_id,
+    brand_id: product.brand_id,
+    brand: product.brand || '',
+    image_url: product.image_url || '',
+    images: Array.isArray(product.images) ? product.images : [],
+    tags: Array.isArray(product.tags) ? product.tags : [],
+    details: Array.isArray(product.details) ? product.details : [],
+    featured: product.featured || false,
+    active: product.active || true,
+    new: product.new || false,
+    sku: product.sku || '',
+    store_reference: product.store_reference || '',
+    material: product.material || '',
+    weight: product.weight,
+    dimensions: product.dimensions || '',
+    rating: product.rating,
+    reviews_count: product.reviews_count || 0,
+    created_at: product.created_at,
+    updated_at: product.updated_at,
+    variants: variants,
+    _actiontype: product._actiontype
+  };
+
+  // Si des champs spécifiques sont demandés, les inclure
+  if (fields) {
+    // S'assurer que id est toujours inclus
+    if (!fields.includes('id')) fields.push('id');
+    
+    const result = {};
+    fields.forEach(field => {
+      if (baseFields.hasOwnProperty(field)) {
+        result[field] = baseFields[field];
+      }
+    });
+    return result;
+  }
+
+  return baseFields;
+};
+
 class CornerProductController {
   // Récupérer tous les produits de The Corner avec filtrage
   static async getAllCornerProducts(req) {
@@ -54,6 +106,9 @@ class CornerProductController {
       const page = Number.parseInt(req.query.page) || 1
       const limit = Number.parseInt(req.query.limit) || 50
       const offset = (page - 1) * limit
+      
+      // Extraction des champs demandés s'ils existent
+      const fields = req.query.fields ? req.query.fields.split(',') : null;
 
       const queryParams = []
       const whereConditions = ["corner_products.active = true"]
@@ -152,11 +207,11 @@ class CornerProductController {
         pool.query(countQuery, queryParams)
       ])
 
+      // Optimiser les données en fonction des champs demandés
+      const optimizedData = products.rows.map(product => optimizeCornerProductFields(product, fields));
+
       return {
-        data: products.rows.map(product => ({
-          ...product,
-          variants: product.variants || []
-        })),
+        data: optimizedData,
         pagination: {
           currentPage: page,
           pageSize: limit,
