@@ -122,6 +122,8 @@ class ProductController {
       fields = req.query.fields.split(',');
     }
 
+    // NOTE: Système de cache temporairement désactivé
+    /* 
     // Système de cache pour les requêtes populaires
     // Génération d'une clé de cache basée sur les paramètres de la requête
     const cacheKey = generateCacheKey(req.query);
@@ -134,6 +136,7 @@ class ProductController {
     }
 
     console.log("Cache miss for products query:", cacheKey);
+    */
 
     // Construction des conditions WHERE
     const whereConditions = ["_actiontype IS DISTINCT FROM 'hardDelete'", "_actiontype IS DISTINCT FROM 'delete'", "_actiontype IS DISTINCT FROM 'permDelete'", "deleted IS DISTINCT FROM true"]
@@ -240,8 +243,11 @@ class ProductController {
       },
     };
 
+    // NOTE: Mise en cache temporairement désactivée
+    /*
     // Stocker le résultat dans le cache
     await cacheResult(cacheKey, result);
+    */
 
     return result;
   }

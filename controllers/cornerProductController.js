@@ -113,6 +113,8 @@ class CornerProductController {
         fields = req.query.fields.split(',')
       }
 
+      // NOTE: Système de cache temporairement désactivé
+      /*
       // Système de cache pour les requêtes populaires
       // Génération d'une clé de cache basée sur les paramètres de la requête
       const cacheKey = `corner_products_${JSON.stringify(Object.keys(req.query).sort().reduce((acc, key) => {
@@ -150,6 +152,7 @@ class CornerProductController {
       }
 
       console.log("Cache miss for corner products query:", cacheKey);
+      */
 
       const queryParams = []
       const whereConditions = ["corner_products.active = true"]
@@ -261,6 +264,8 @@ class CornerProductController {
         }
       };
 
+      // NOTE: Mise en cache temporairement désactivée
+      /*
       // Stocker le résultat dans le cache
       try {
         // Vérifier d'abord si la table api_cache existe
@@ -287,6 +292,7 @@ class CornerProductController {
         console.error("Erreur lors de la mise en cache:", error);
         // Continuer sans mise en cache en cas d'erreur
       }
+      */
 
       return result;
     } catch (error) {
