@@ -122,15 +122,27 @@ class CornerProductController {
       
       // Vérifier si la réponse est en cache
       try {
-        const { rows } = await pool.query(`
-          SELECT data FROM api_cache 
-          WHERE cache_key = $1 
-          AND created_at >= NOW() - INTERVAL '10 minutes'
-        `, [cacheKey]);
+        // Vérifier d'abord si la table api_cache existe
+        const { rows: tableCheck } = await pool.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_name = 'api_cache'
+          );
+        `);
+        
+        if (tableCheck[0].exists) {
+          const { rows } = await pool.query(`
+            SELECT data FROM api_cache 
+            WHERE cache_key = $1 
+            AND created_at >= NOW() - INTERVAL '10 minutes'
+          `, [cacheKey]);
 
-        if (rows.length > 0) {
-          console.log("Cache hit for corner products query:", cacheKey);
-          return rows[0].data;
+          if (rows.length > 0) {
+            console.log("Cache hit for corner products query:", cacheKey);
+            return rows[0].data;
+          }
+        } else {
+          console.log("Table api_cache n'existe pas encore, ignorant la vérification du cache");
         }
       } catch (error) {
         console.error("Erreur lors de la récupération du cache:", error);
@@ -251,14 +263,26 @@ class CornerProductController {
 
       // Stocker le résultat dans le cache
       try {
-        await pool.query(`
-          INSERT INTO api_cache (cache_key, data)
-          VALUES ($1, $2)
-          ON CONFLICT (cache_key)
-          DO UPDATE SET 
-            data = $2,
-            created_at = CURRENT_TIMESTAMP
-        `, [cacheKey, result]);
+        // Vérifier d'abord si la table api_cache existe
+        const { rows: tableCheck } = await pool.query(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_name = 'api_cache'
+          );
+        `);
+        
+        if (tableCheck[0].exists) {
+          await pool.query(`
+            INSERT INTO api_cache (cache_key, data)
+            VALUES ($1, $2)
+            ON CONFLICT (cache_key)
+            DO UPDATE SET 
+              data = $2,
+              created_at = CURRENT_TIMESTAMP
+          `, [cacheKey, result]);
+        } else {
+          console.log("Table api_cache n'existe pas encore, ignorant la mise en cache");
+        }
       } catch (error) {
         console.error("Erreur lors de la mise en cache:", error);
         // Continuer sans mise en cache en cas d'erreur

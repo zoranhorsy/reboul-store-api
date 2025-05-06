@@ -633,6 +633,19 @@ function generateCacheKey(params) {
  */
 async function getCachedResult(key) {
   try {
+    // Vérifier d'abord si la table api_cache existe
+    const { rows: tableCheck } = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'api_cache'
+      );
+    `);
+    
+    if (!tableCheck[0].exists) {
+      console.log("Table api_cache n'existe pas encore, ignorant la vérification du cache");
+      return null;
+    }
+    
     const { rows } = await pool.query(`
       SELECT data FROM api_cache 
       WHERE cache_key = $1 
@@ -645,6 +658,7 @@ async function getCachedResult(key) {
     return null;
   } catch (error) {
     console.error("Erreur lors de la récupération du cache:", error);
+    // Ne pas faire échouer l'API si le cache ne fonctionne pas
     return null;
   }
 }
@@ -657,6 +671,19 @@ async function getCachedResult(key) {
  */
 async function cacheResult(key, data) {
   try {
+    // Vérifier d'abord si la table api_cache existe
+    const { rows: tableCheck } = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = 'api_cache'
+      );
+    `);
+    
+    if (!tableCheck[0].exists) {
+      console.log("Table api_cache n'existe pas encore, ignorant la mise en cache");
+      return;
+    }
+    
     await pool.query(`
       INSERT INTO api_cache (cache_key, data)
       VALUES ($1, $2)
@@ -667,6 +694,7 @@ async function cacheResult(key, data) {
     `, [key, data]);
   } catch (error) {
     console.error("Erreur lors de la mise en cache:", error);
+    // Ne pas faire échouer l'API si le cache ne fonctionne pas
   }
 }
 
