@@ -32,14 +32,34 @@ Pour réduire la taille des réponses, vous pouvez spécifier exactement quels c
 GET /api/products?fields=id,name,price
 ```
 
-**Champs par défaut retournés (sans spécifier fields):**
-- id
-- name
-- price
-- image_url
-- brand
-- brand_id
-- store_type
+**Champs disponibles pour les produits:**
+- `id` - Identifiant unique du produit
+- `name` - Nom du produit
+- `description` - Description détaillée
+- `price` - Prix du produit
+- `category_id` - ID de la catégorie
+- `brand` - Nom de la marque
+- `brand_id` - ID de la marque
+- `image_url` - URL de l'image principale
+- `images` - Tableau des URLs d'images additionnelles
+- `variants` - Tableau des variantes (tailles, couleurs, stock)
+- `tags` - Tableau des tags associés
+- `details` - Tableau des détails du produit
+- `store_type` - Type de magasin (adult, kids, sneakers, cpcompany)
+- `featured` - Produit mis en avant (boolean)
+- `active` - Produit actif (boolean)
+- `new` - Produit nouveau (boolean)
+- `_actiontype` - Type d'action sur le produit
+- `store_reference` - Référence du magasin
+- `material` - Matériau du produit
+- `weight` - Poids du produit
+- `dimensions` - Dimensions du produit
+- `rating` - Note moyenne du produit
+- `reviews_count` - Nombre d'avis
+- `created_at` - Date de création
+- `sku` - Référence unique du produit
+
+**Par défaut, tous les champs sont retournés** sauf si vous spécifiez le paramètre `fields`.
 
 **Avantages:**
 - Réduit significativement la taille des réponses
@@ -85,12 +105,27 @@ GET /api/products?page=1&limit=10&fields=id,name,price,image_url
 GET /api/products?search=sneakers&category_id=5&fields=id,name,price,image_url,variants
 ```
 
+### 4. Obtenir uniquement les informations de variants
+
+```
+GET /api/products?fields=id,name,variants
+```
+
 ## Bonnes Pratiques
 
-1. **Toujours spécifier les champs nécessaires** avec le paramètre `fields` pour minimiser la taille des réponses
-2. **Limiter le nombre d'éléments par page** à ce qui est nécessaire pour l'UI
-3. **Utiliser les filtres côté serveur** plutôt que de filtrer côté client
-4. **Mettre en cache les résultats** quand c'est possible
+1. **Pour les vues catalogue**: Utilisez uniquement les champs nécessaires à l'affichage des vignettes:
+   ```
+   fields=id,name,price,image_url,variants,brand,featured,new
+   ```
+
+2. **Pour les pages produit**: Récupérez tous les détails:
+   ```
+   fields=id,name,price,description,image_url,images,variants,brand,tags,details,material,dimensions
+   ```
+
+3. **Limiter le nombre d'éléments par page** à ce qui est nécessaire pour l'UI
+4. **Utiliser les filtres côté serveur** plutôt que de filtrer côté client
+5. **Mettre en cache les résultats** quand c'est possible
 
 ## Codes de Statut HTTP
 
@@ -103,4 +138,4 @@ GET /api/products?search=sneakers&category_id=5&fields=id,name,price,image_url,v
 
 ## Performances
 
-La structure de réponse optimisée permet généralement une réduction de taille de 30% à 70% par rapport à la version non optimisée, selon les champs sélectionnés. 
+La structure de réponse optimisée permet généralement une réduction de taille de 30% à 70% par rapport à la version non optimisée, selon les champs sélectionnés. Pour les vues catalogue, nous recommandons de limiter les champs aux informations essentielles afin d'optimiser les performances. 

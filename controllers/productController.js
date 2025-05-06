@@ -20,28 +20,87 @@ const parseJsonField = (field, value) => {
 // Fonction pour sélectionner les champs nécessaires d'un produit
 // et minimiser la taille de la réponse
 const optimizeProductFields = (product, fields = null) => {
-  // Structure minimale par défaut si aucun champ spécifié
+  // Parsing des variants s'ils sont stockés au format JSON
+  let variants = [];
+  try {
+    variants = typeof product.variants === 'string' 
+      ? JSON.parse(product.variants) 
+      : (Array.isArray(product.variants) ? product.variants : []);
+  } catch (e) {
+    console.error('Erreur lors du parsing des variants:', e);
+    variants = [];
+  }
+
+  // Parsing des images s'ils sont stockés au format JSON
+  let images = [];
+  try {
+    images = typeof product.images === 'string' 
+      ? JSON.parse(product.images) 
+      : (Array.isArray(product.images) ? product.images : []);
+  } catch (e) {
+    console.error('Erreur lors du parsing des images:', e);
+    images = [];
+  }
+
+  // Parsing des tags et details s'ils sont stockés au format JSON
+  let tags = [];
+  try {
+    tags = typeof product.tags === 'string' 
+      ? JSON.parse(product.tags) 
+      : (Array.isArray(product.tags) ? product.tags : []);
+  } catch (e) {
+    console.error('Erreur lors du parsing des tags:', e);
+    tags = [];
+  }
+
+  let details = [];
+  try {
+    details = typeof product.details === 'string' 
+      ? JSON.parse(product.details) 
+      : (Array.isArray(product.details) ? product.details : []);
+  } catch (e) {
+    console.error('Erreur lors du parsing des details:', e);
+    details = [];
+  }
+
+  // Structure complète basée sur le schéma de BDD
   const baseFields = {
     id: product.id,
-    name: product.name,
-    price: typeof product.price === 'string' ? parseFloat(product.price) : product.price,
-    image_url: product.image_url,
-    brand: product.brand,
+    name: product.name || '',
+    description: product.description || '',
+    price: typeof product.price === 'string' ? parseFloat(product.price) : (product.price || 0),
+    category_id: product.category_id,
+    brand: product.brand || '',
     brand_id: product.brand_id,
-    store_type: product.store_type
+    image_url: product.image_url || '',
+    images: images,
+    variants: variants,
+    tags: tags,
+    details: details,
+    store_type: product.store_type || '',
+    featured: product.featured || false,
+    active: product.active || true,
+    new: product.new || false,
+    _actiontype: product._actiontype,
+    store_reference: product.store_reference || '',
+    material: product.material || '',
+    weight: product.weight,
+    dimensions: product.dimensions || '',
+    rating: product.rating,
+    reviews_count: product.reviews_count || 0,
+    created_at: product.created_at,
+    sku: product.sku || ''
   };
 
   // Si des champs spécifiques sont demandés, les inclure
   if (fields) {
-    const result = { ...baseFields };
+    // S'assurer que id est toujours inclus
+    if (!fields.includes('id')) fields.push('id');
+    
+    const result = {};
     fields.forEach(field => {
-      if (field !== 'id' && field !== 'name' && field !== 'price' && field !== 'image_url' && field !== 'brand' && field !== 'store_type') {
-        // Pour les champs de type Array ou Object, vérifier s'ils doivent être inclus complets
-        if ((Array.isArray(product[field]) || typeof product[field] === 'object') && product[field] !== null) {
-          result[field] = product[field];
-        } else {
-          result[field] = product[field];
-        }
+      if (baseFields.hasOwnProperty(field)) {
+        result[field] = baseFields[field];
       }
     });
     return result;
