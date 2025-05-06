@@ -34,6 +34,7 @@ router.get(
     query("search").optional().isString(),
     query("sort").optional().isIn(["name", "price"]).withMessage("Le tri doit être soit par nom, soit par prix"),
     query("order").optional().isIn(["asc", "desc"]).withMessage("L'ordre doit être asc ou desc"),
+    query("fields").optional().isString().withMessage("Le format de fields doit être une chaîne de caractères (ex: 'id,name,price')"),
   ],
   validateRequest,
   async (req, res, next) => {

@@ -17,12 +17,48 @@ const parseJsonField = (field, value) => {
   return value
 }
 
+// Fonction pour sélectionner les champs nécessaires d'un produit
+// et minimiser la taille de la réponse
+const optimizeProductFields = (product, fields = null) => {
+  // Structure minimale par défaut si aucun champ spécifié
+  const baseFields = {
+    id: product.id,
+    name: product.name,
+    price: typeof product.price === 'string' ? parseFloat(product.price) : product.price,
+    image_url: product.image_url,
+    brand: product.brand,
+    brand_id: product.brand_id,
+    store_type: product.store_type
+  };
+
+  // Si des champs spécifiques sont demandés, les inclure
+  if (fields) {
+    const result = { ...baseFields };
+    fields.forEach(field => {
+      if (field !== 'id' && field !== 'name' && field !== 'price' && field !== 'image_url' && field !== 'brand' && field !== 'store_type') {
+        // Pour les champs de type Array ou Object, vérifier s'ils doivent être inclus complets
+        if ((Array.isArray(product[field]) || typeof product[field] === 'object') && product[field] !== null) {
+          result[field] = product[field];
+        } else {
+          result[field] = product[field];
+        }
+      }
+    });
+    return result;
+  }
+
+  return baseFields;
+}
+
 class ProductController {
   // Récupérer tous les produits avec filtrage
   static async getAllProducts(req) {
     const page = Number.parseInt(req.query.page) || 1
     const limit = Number.parseInt(req.query.limit) || 50
     const offset = (page - 1) * limit
+    
+    // Extraction des champs demandés s'ils existent
+    const fields = req.query.fields ? req.query.fields.split(',') : null;
 
     const queryParams = []
     const whereConditions = []
@@ -91,7 +127,15 @@ class ProductController {
     const sortOrder = req.query.order === "desc" ? "DESC" : "ASC"
 
     // Construction de la requête SQL
-    let query = "SELECT *, variants FROM products"
+    // Optimisation: sélection conditionnelle des champs selon le paramètre fields
+    let selectedFields = "*";
+    if (fields) {
+      // S'assurer que id est toujours inclus
+      if (!fields.includes('id')) fields.push('id');
+      selectedFields = fields.join(', ');
+    }
+    
+    let query = `SELECT ${selectedFields} FROM products`
     if (whereConditions.length > 0) {
       query += " WHERE " + whereConditions.join(" AND ")
     }
@@ -107,8 +151,11 @@ class ProductController {
     const { rows: countRows } = await pool.query(countQuery, queryParams)
     const totalCount = Number.parseInt(countRows[0].count)
 
+    // Optimisation des données retournées
+    const optimizedData = rows.map(product => optimizeProductFields(product, fields));
+
     return {
-      data: rows,
+      data: optimizedData,
       pagination: {
         currentPage: page,
         pageSize: limit,
