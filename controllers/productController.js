@@ -17,142 +17,27 @@ const parseJsonField = (field, value) => {
   return value
 }
 
-// Fonction pour sélectionner les champs nécessaires d'un produit
-// et minimiser la taille de la réponse
-const optimizeProductFields = (product, fields = null) => {
-  // Parsing des variants s'ils sont stockés au format JSON
-  let variants = [];
-  try {
-    variants = typeof product.variants === 'string' 
-      ? JSON.parse(product.variants) 
-      : (Array.isArray(product.variants) ? product.variants : []);
-  } catch (e) {
-    console.error('Erreur lors du parsing des variants:', e);
-    variants = [];
-  }
-
-  // Parsing des images s'ils sont stockés au format JSON
-  let images = [];
-  try {
-    images = typeof product.images === 'string' 
-      ? JSON.parse(product.images) 
-      : (Array.isArray(product.images) ? product.images : []);
-  } catch (e) {
-    console.error('Erreur lors du parsing des images:', e);
-    images = [];
-  }
-
-  // Parsing des tags et details s'ils sont stockés au format JSON
-  let tags = [];
-  try {
-    tags = typeof product.tags === 'string' 
-      ? JSON.parse(product.tags) 
-      : (Array.isArray(product.tags) ? product.tags : []);
-  } catch (e) {
-    console.error('Erreur lors du parsing des tags:', e);
-    tags = [];
-  }
-
-  let details = [];
-  try {
-    details = typeof product.details === 'string' 
-      ? JSON.parse(product.details) 
-      : (Array.isArray(product.details) ? product.details : []);
-  } catch (e) {
-    console.error('Erreur lors du parsing des details:', e);
-    details = [];
-  }
-
-  // Structure complète basée sur le schéma de BDD
-  const baseFields = {
-    id: product.id,
-    name: product.name || '',
-    description: product.description || '',
-    price: typeof product.price === 'string' ? parseFloat(product.price) : (product.price || 0),
-    category_id: product.category_id,
-    brand: product.brand || '',
-    brand_id: product.brand_id,
-    image_url: product.image_url || '',
-    images: images,
-    variants: variants,
-    tags: tags,
-    details: details,
-    store_type: product.store_type || '',
-    featured: product.featured || false,
-    active: product.active || true,
-    new: product.new || false,
-    _actiontype: product._actiontype,
-    store_reference: product.store_reference || '',
-    material: product.material || '',
-    weight: product.weight,
-    dimensions: product.dimensions || '',
-    rating: product.rating,
-    reviews_count: product.reviews_count || 0,
-    created_at: product.created_at,
-    sku: product.sku || ''
-  };
-
-  // Si des champs spécifiques sont demandés, les inclure
-  if (fields) {
-    // S'assurer que id est toujours inclus
-    if (!fields.includes('id')) fields.push('id');
-    
-    const result = {};
-    fields.forEach(field => {
-      if (baseFields.hasOwnProperty(field)) {
-        result[field] = baseFields[field];
-      }
-    });
-    return result;
-  }
-
-  return baseFields;
-}
-
 class ProductController {
   // Récupérer tous les produits avec filtrage
   static async getAllProducts(req) {
     const page = Number.parseInt(req.query.page) || 1
-    const limit = Number.parseInt(req.query.limit) || 10
+    const limit = Number.parseInt(req.query.limit) || 50
     const offset = (page - 1) * limit
 
-    // Extraction des champs demandés pour optimiser la taille de la réponse
-    let fields = null;
-    if (req.query.fields) {
-      fields = req.query.fields.split(',');
-    }
-
-    // NOTE: Système de cache temporairement désactivé
-    /* 
-    // Système de cache pour les requêtes populaires
-    // Génération d'une clé de cache basée sur les paramètres de la requête
-    const cacheKey = generateCacheKey(req.query);
-    
-    // Vérifier si la réponse est en cache
-    const cachedResult = await getCachedResult(cacheKey);
-    if (cachedResult) {
-      console.log("Cache hit for products query:", cacheKey);
-      return cachedResult;
-    }
-
-    console.log("Cache miss for products query:", cacheKey);
-    */
-
-    // Construction des conditions WHERE
-    const whereConditions = ["_actiontype IS DISTINCT FROM 'hardDelete'", "_actiontype IS DISTINCT FROM 'delete'", "_actiontype IS DISTINCT FROM 'permDelete'", "deleted IS DISTINCT FROM true"]
     const queryParams = []
+    const whereConditions = []
     let paramIndex = 1
 
-    // Helper pour ajouter des conditions
+    // Fonction pour ajouter une condition
     const addCondition = (condition, value) => {
       whereConditions.push(condition)
       queryParams.push(value)
-      paramIndex++
+      return paramIndex++
     }
 
-    // Filtres dynamiques
+    // Ajout des conditions de filtrage
     if (req.query.category_id) {
-      addCondition("category_id = $" + paramIndex, req.query.category_id)
+      addCondition("category_id = $" + paramIndex, Number.parseInt(req.query.category_id))
     }
 
     // Utiliser brand_id comme filtre principal pour la marque
@@ -206,15 +91,7 @@ class ProductController {
     const sortOrder = req.query.order === "desc" ? "DESC" : "ASC"
 
     // Construction de la requête SQL
-    // Optimisation: sélection conditionnelle des champs selon le paramètre fields
-    let selectedFields = "*";
-    if (fields) {
-      // S'assurer que id est toujours inclus
-      if (!fields.includes('id')) fields.push('id');
-      selectedFields = fields.join(', ');
-    }
-    
-    let query = `SELECT ${selectedFields} FROM products`
+    let query = "SELECT *, variants FROM products"
     if (whereConditions.length > 0) {
       query += " WHERE " + whereConditions.join(" AND ")
     }
@@ -230,26 +107,15 @@ class ProductController {
     const { rows: countRows } = await pool.query(countQuery, queryParams)
     const totalCount = Number.parseInt(countRows[0].count)
 
-    // Optimisation des données retournées
-    const optimizedData = rows.map(product => optimizeProductFields(product, fields));
-
-    const result = {
-      data: optimizedData,
+    return {
+      data: rows,
       pagination: {
         currentPage: page,
         pageSize: limit,
         totalItems: totalCount,
         totalPages: Math.ceil(totalCount / limit),
       },
-    };
-
-    // NOTE: Mise en cache temporairement désactivée
-    /*
-    // Stocker le résultat dans le cache
-    await cacheResult(cacheKey, result);
-    */
-
-    return result;
+    }
   }
 
   // Récupérer un produit par ID
@@ -614,93 +480,6 @@ class ProductController {
       console.error("Erreur lors de la correction des images:", error);
       throw new AppError("Erreur lors de la correction des images", 500);
     }
-  }
-}
-
-/**
- * Génère une clé de cache unique basée sur les paramètres de requête
- * @param {Object} params - Paramètres de la requête
- * @returns {string} - Clé de cache
- */
-function generateCacheKey(params) {
-  // Trier les clés pour assurer une cohérence des clés de cache
-  const sortedParams = Object.keys(params).sort().reduce((acc, key) => {
-    acc[key] = params[key];
-    return acc;
-  }, {});
-  
-  return `products_${JSON.stringify(sortedParams)}`;
-}
-
-/**
- * Récupère un résultat en cache
- * @param {string} key - Clé de cache
- * @returns {Promise<Object|null>} - Résultat en cache ou null
- */
-async function getCachedResult(key) {
-  try {
-    // Vérifier d'abord si la table api_cache existe
-    const { rows: tableCheck } = await pool.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_name = 'api_cache'
-      );
-    `);
-    
-    if (!tableCheck[0].exists) {
-      console.log("Table api_cache n'existe pas encore, ignorant la vérification du cache");
-      return null;
-    }
-    
-    const { rows } = await pool.query(`
-      SELECT data FROM api_cache 
-      WHERE cache_key = $1 
-      AND created_at >= NOW() - INTERVAL '10 minutes'
-    `, [key]);
-
-    if (rows.length > 0) {
-      return rows[0].data;
-    }
-    return null;
-  } catch (error) {
-    console.error("Erreur lors de la récupération du cache:", error);
-    // Ne pas faire échouer l'API si le cache ne fonctionne pas
-    return null;
-  }
-}
-
-/**
- * Stocke un résultat dans le cache
- * @param {string} key - Clé de cache
- * @param {Object} data - Données à mettre en cache
- * @returns {Promise<void>}
- */
-async function cacheResult(key, data) {
-  try {
-    // Vérifier d'abord si la table api_cache existe
-    const { rows: tableCheck } = await pool.query(`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_name = 'api_cache'
-      );
-    `);
-    
-    if (!tableCheck[0].exists) {
-      console.log("Table api_cache n'existe pas encore, ignorant la mise en cache");
-      return;
-    }
-    
-    await pool.query(`
-      INSERT INTO api_cache (cache_key, data)
-      VALUES ($1, $2)
-      ON CONFLICT (cache_key)
-      DO UPDATE SET 
-        data = $2,
-        created_at = CURRENT_TIMESTAMP
-    `, [key, data]);
-  } catch (error) {
-    console.error("Erreur lors de la mise en cache:", error);
-    // Ne pas faire échouer l'API si le cache ne fonctionne pas
   }
 }
 

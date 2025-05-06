@@ -47,112 +47,13 @@ const validateVariants = (variants) => {
   });
 }
 
-// Fonction pour optimiser les champs des produits de The Corner
-const optimizeCornerProductFields = (product, fields = null) => {
-  // Traitement des variants si nécessaire (ils devraient déjà être au format JSON depuis la requête SQL)
-  const variants = Array.isArray(product.variants) ? product.variants : [];
-  
-  // Structure complète basée sur le schéma de BDD corner_products
-  const baseFields = {
-    id: product.id,
-    name: product.name || '',
-    description: product.description || '',
-    price: typeof product.price === 'string' ? parseFloat(product.price) : (product.price || 0),
-    old_price: product.old_price ? (typeof product.old_price === 'string' ? parseFloat(product.old_price) : product.old_price) : null,
-    category_id: product.category_id,
-    brand_id: product.brand_id,
-    brand: product.brand || '',
-    image_url: product.image_url || '',
-    images: Array.isArray(product.images) ? product.images : [],
-    tags: Array.isArray(product.tags) ? product.tags : [],
-    details: Array.isArray(product.details) ? product.details : [],
-    featured: product.featured || false,
-    active: product.active || true,
-    new: product.new || false,
-    sku: product.sku || '',
-    store_reference: product.store_reference || '',
-    material: product.material || '',
-    weight: product.weight,
-    dimensions: product.dimensions || '',
-    rating: product.rating,
-    reviews_count: product.reviews_count || 0,
-    created_at: product.created_at,
-    updated_at: product.updated_at,
-    variants: variants,
-    _actiontype: product._actiontype
-  };
-
-  // Si des champs spécifiques sont demandés, les inclure
-  if (fields) {
-    // S'assurer que id est toujours inclus
-    if (!fields.includes('id')) fields.push('id');
-    
-    const result = {};
-    fields.forEach(field => {
-      if (baseFields.hasOwnProperty(field)) {
-        result[field] = baseFields[field];
-      }
-    });
-    return result;
-  }
-
-  return baseFields;
-};
-
 class CornerProductController {
   // Récupérer tous les produits de The Corner avec filtrage
   static async getAllCornerProducts(req) {
     try {
       const page = Number.parseInt(req.query.page) || 1
-      const limit = Number.parseInt(req.query.limit) || 10
+      const limit = Number.parseInt(req.query.limit) || 50
       const offset = (page - 1) * limit
-      
-      // Extraction des champs demandés
-      let fields = null
-      if (req.query.fields) {
-        fields = req.query.fields.split(',')
-      }
-
-      // NOTE: Système de cache temporairement désactivé
-      /*
-      // Système de cache pour les requêtes populaires
-      // Génération d'une clé de cache basée sur les paramètres de la requête
-      const cacheKey = `corner_products_${JSON.stringify(Object.keys(req.query).sort().reduce((acc, key) => {
-        acc[key] = req.query[key];
-        return acc;
-      }, {}))}`;
-      
-      // Vérifier si la réponse est en cache
-      try {
-        // Vérifier d'abord si la table api_cache existe
-        const { rows: tableCheck } = await pool.query(`
-          SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_name = 'api_cache'
-          );
-        `);
-        
-        if (tableCheck[0].exists) {
-          const { rows } = await pool.query(`
-            SELECT data FROM api_cache 
-            WHERE cache_key = $1 
-            AND created_at >= NOW() - INTERVAL '10 minutes'
-          `, [cacheKey]);
-
-          if (rows.length > 0) {
-            console.log("Cache hit for corner products query:", cacheKey);
-            return rows[0].data;
-          }
-        } else {
-          console.log("Table api_cache n'existe pas encore, ignorant la vérification du cache");
-        }
-      } catch (error) {
-        console.error("Erreur lors de la récupération du cache:", error);
-        // Continuer sans le cache en cas d'erreur
-      }
-
-      console.log("Cache miss for corner products query:", cacheKey);
-      */
 
       const queryParams = []
       const whereConditions = ["corner_products.active = true"]
@@ -251,53 +152,21 @@ class CornerProductController {
         pool.query(countQuery, queryParams)
       ])
 
-      // Optimiser les données en fonction des champs demandés
-      const optimizedData = products.rows.map(product => optimizeCornerProductFields(product, fields));
-
-      const result = {
-        data: optimizedData,
+      return {
+        data: products.rows.map(product => ({
+          ...product,
+          variants: product.variants || []
+        })),
         pagination: {
           currentPage: page,
           pageSize: limit,
           totalItems: parseInt(count.rows[0].count),
           totalPages: Math.ceil(parseInt(count.rows[0].count) / limit)
         }
-      };
-
-      // NOTE: Mise en cache temporairement désactivée
-      /*
-      // Stocker le résultat dans le cache
-      try {
-        // Vérifier d'abord si la table api_cache existe
-        const { rows: tableCheck } = await pool.query(`
-          SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_name = 'api_cache'
-          );
-        `);
-        
-        if (tableCheck[0].exists) {
-          await pool.query(`
-            INSERT INTO api_cache (cache_key, data)
-            VALUES ($1, $2)
-            ON CONFLICT (cache_key)
-            DO UPDATE SET 
-              data = $2,
-              created_at = CURRENT_TIMESTAMP
-          `, [cacheKey, result]);
-        } else {
-          console.log("Table api_cache n'existe pas encore, ignorant la mise en cache");
-        }
-      } catch (error) {
-        console.error("Erreur lors de la mise en cache:", error);
-        // Continuer sans mise en cache en cas d'erreur
       }
-      */
-
-      return result;
     } catch (error) {
-      console.error("Error fetching corner products:", error)
-      throw error
+      console.error('Erreur dans getAllCornerProducts:', error);
+      throw error;
     }
   }
 
