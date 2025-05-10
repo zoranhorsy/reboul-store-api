@@ -4,6 +4,8 @@ const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 const { AppError } = require('../middleware/errorHandler');
 const bcrypt = require('bcrypt');
+const { execFile } = require('child_process');
+const path = require('path');
 
 // Middleware to check if the user is an admin
 const adminMiddleware = (req, res, next) => {
@@ -297,6 +299,46 @@ router.get('/settings', authMiddleware, adminMiddleware, async (req, res, next) 
         console.error('Error fetching settings:', error);
         next(new AppError('Error fetching settings', 500));
     }
+});
+
+// Route pour synchroniser les produits avec Stripe
+router.post('/stripe/sync-products', adminMiddleware, async (req, res) => {
+  try {
+    // Chemin vers le script de synchronisation
+    const scriptPath = path.join(__dirname, '../scripts/stripe-product-sync.js');
+    
+    // Exécuter le script en tant que processus enfant
+    const child = execFile('node', [scriptPath], {
+      env: process.env
+    });
+    
+    // Message de démarrage
+    res.status(202).json({
+      success: true,
+      message: 'Synchronisation des produits avec Stripe démarrée en arrière-plan.'
+    });
+    
+    // Logs optionnels (ne bloquent pas la réponse)
+    child.stdout.on('data', (data) => {
+      console.log(`[Stripe Sync] ${data}`);
+    });
+    
+    child.stderr.on('data', (data) => {
+      console.error(`[Stripe Sync Error] ${data}`);
+    });
+    
+    child.on('close', (code) => {
+      console.log(`[Stripe Sync] Processus terminé avec le code ${code}`);
+    });
+    
+  } catch (error) {
+    console.error('Erreur lors du lancement de la synchronisation:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur lors du lancement de la synchronisation',
+      error: error.message
+    });
+  }
 });
 
 module.exports = router;
