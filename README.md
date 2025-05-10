@@ -1,6 +1,40 @@
-# Reboul Store API
+# Backend Reboul
 
-Backend API pour la boutique Reboul Store, construite avec Express.js et PostgreSQL.
+Ce dossier contient le code backend de l'application Reboul.
+
+## Structure
+
+- `api/` : Points d'entrée de l'API
+- `config/` : Configuration du serveur
+- `models/` : Modèles de données
+- `services/` : Logique métier
+- `utils/` : Fonctions utilitaires
+
+## Configuration
+
+1. Assurez-vous d'avoir les variables d'environnement nécessaires dans un fichier `.env`
+2. Installez les dépendances avec `npm install`
+3. Lancez le serveur en mode développement avec `npm run dev`
+
+## API Endpoints
+
+Les endpoints de l'API sont documentés dans le dossier `api/`. Chaque endpoint suit la convention REST.
+
+## Base de données
+
+Le backend utilise une base de données PostgreSQL. Les migrations et les schémas sont gérés avec Prisma.
+
+## Tests
+
+Pour exécuter les tests :
+```bash
+npm run test
+```
+
+Pour les tests en mode watch :
+```bash
+npm run test:watch
+```
 
 ## Configuration requise
 
@@ -42,13 +76,6 @@ npm run dev
 Pour démarrer le serveur en mode production :
 ```bash
 npm start
-```
-
-## Tests
-
-Pour exécuter les tests :
-```bash
-npm test
 ```
 
 ## Structure du projet

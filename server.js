@@ -16,6 +16,9 @@ const uploadsDir = path.join(publicDir, 'uploads');
 const brandsDir = path.join(publicDir, 'brands');
 const archivesDir = path.join(publicDir, 'archives');
 
+const stripeWebhook = require('./routes/stripewebhooks');
+app.use('/api/webhooks', stripeWebhook);
+
 // Créer les dossiers s'ils n'existent pas
 [publicDir, uploadsDir, brandsDir, archivesDir].forEach(dir => {
     if (!fs.existsSync(dir)) {
