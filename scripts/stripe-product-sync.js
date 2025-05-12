@@ -2,10 +2,21 @@
  * Script de synchronisation des produits entre la base de données Reboul et Stripe
  * 
  * Ce script permet de:
- * 1. Récupérer tous les produits actifs de la base de données
- * 2. Créer ou mettre à jour les produits correspondants dans Stripe
- * 3. Synchroniser les prix, stocks et descriptions
- * 4. Journaliser les succès et échecs pour suivi
+ * 1. Optionnellement supprimer tous les produits existants dans Stripe (avec CLEAN_PRODUCTS=true)
+ * 2. Récupérer tous les produits actifs de la base de données
+ * 3. Créer les produits correspondants dans Stripe
+ * 4. Synchroniser les prix, stocks et descriptions
+ * 5. Organiser les produits en catégories et collections
+ * 6. Journaliser les succès et échecs pour suivi
+ * 
+ * Options d'environnement:
+ * - CLEAN_PRODUCTS=true : Supprime tous les produits existants de Stripe avant la synchronisation
+ * - MAX_PRODUCTS=n : Limite le nombre de produits à synchroniser (0 = tous)
+ * 
+ * Utilisation:
+ * - Standard: node stripe-product-sync.js
+ * - Avec nettoyage: CLEAN_PRODUCTS=true node stripe-product-sync.js
+ * - Avec script shell: ./stripe-clean-sync.sh [nombre_max_produits]
  */
 
 const path = require('path');
@@ -27,6 +38,7 @@ const LOG_DIR = path.join(__dirname, '../logs');
 const LOG_FILE = path.join(LOG_DIR, `stripe-sync-${new Date().toISOString().split('T')[0]}.log`);
 const BATCH_SIZE = 50; // Nombre de produits à traiter par lot
 const MAX_PRODUCTS = process.env.MAX_PRODUCTS ? parseInt(process.env.MAX_PRODUCTS) : 0; // Limite optionnelle du nombre total de produits à traiter (0 = tous)
+const CLEAN_PRODUCTS = process.env.CLEAN_PRODUCTS === 'true'; // Option pour supprimer tous les produits Stripe avant synchronisation
 
 // Vérification du répertoire de logs
 if (!fs.existsSync(LOG_DIR)) {
@@ -41,10 +53,100 @@ function log(message, isError = false) {
   console.log(logEntry.trim());
 }
 
+// Supprimer tous les produits existants dans Stripe
+async function cleanStripeProducts() {
+  try {
+    log('Début de la réinitialisation du catalogue Stripe...');
+    
+    // Nous allons simplement archiver tous les produits existants en les désactivant
+    // car Stripe ne permet pas de supprimer complètement les produits avec des prix
+    
+    // Étape 1: Désactiver tous les produits existants
+    log('Étape 1/2: Désactivation de tous les produits...');
+    let hasMore = true;
+    let startingAfter = null;
+    let archivedCount = 0;
+    
+    while (hasMore) {
+      const options = { limit: 100, active: true };
+      if (startingAfter) options.starting_after = startingAfter;
+      
+      const products = await stripe.products.list(options);
+      hasMore = products.has_more;
+      
+      if (products.data.length > 0) {
+        startingAfter = products.data[products.data.length - 1].id;
+        
+        for (const product of products.data) {
+          try {
+            // Archiver le produit en le désactivant et en ajoutant une métadonnée
+            await stripe.products.update(product.id, { 
+              active: false,
+              metadata: { 
+                ...product.metadata,
+                archived: 'true',
+                archived_at: new Date().toISOString(),
+                archived_by: 'reboul-sync'
+              }
+            });
+            archivedCount++;
+            log(`Produit archivé: ${product.id} (${product.name})`);
+          } catch (err) {
+            log(`Erreur lors de l'archivage du produit ${product.id}: ${err.message}`, true);
+          }
+        }
+      } else {
+        hasMore = false;
+      }
+      
+      if (hasMore) await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    // Étape 2: Désactiver tous les prix actifs
+    log('Étape 2/2: Désactivation de tous les prix...');
+    hasMore = true;
+    startingAfter = null;
+    let pricesDisabledCount = 0;
+    
+    while (hasMore) {
+      const options = { limit: 100, active: true };
+      if (startingAfter) options.starting_after = startingAfter;
+      
+      const prices = await stripe.prices.list(options);
+      hasMore = prices.has_more;
+      
+      if (prices.data.length > 0) {
+        startingAfter = prices.data[prices.data.length - 1].id;
+        
+        for (const price of prices.data) {
+          try {
+            await stripe.prices.update(price.id, { active: false });
+            pricesDisabledCount++;
+          } catch (err) {
+            log(`Erreur lors de la désactivation du prix ${price.id}: ${err.message}`, true);
+          }
+        }
+        
+        log(`${pricesDisabledCount} prix désactivés jusqu'à présent...`);
+      } else {
+        hasMore = false;
+      }
+      
+      if (hasMore) await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    
+    log(`Réinitialisation terminée: ${archivedCount} produits archivés et ${pricesDisabledCount} prix désactivés`);
+    return archivedCount;
+  } catch (error) {
+    log(`Erreur lors de la réinitialisation du catalogue Stripe: ${error.message}`, true);
+    throw error;
+  }
+}
+
 // Récupération des produits depuis la base de données
 async function fetchProductsFromDB() {
   try {
-    // Récupérer les produits corner
+    // Récupérer les produits corner - Sans parent_id qui n'existe pas
     const cornerResult = await db.query(`
       SELECT 
         cp.id, 
@@ -60,6 +162,8 @@ async function fetchProductsFromDB() {
         cp.weight,
         cp.dimensions,
         cp.active,
+        cp.featured,
+        cp.new,
         b.name as brand_name,
         c.name as category_name,
         'corner' as product_type,
@@ -85,7 +189,7 @@ async function fetchProductsFromDB() {
       ORDER BY cp.id
     `);
     
-    // Récupérer les produits réguliers (sans old_price qui n'existe pas)
+    // Récupérer les produits réguliers - Sans parent_id qui n'existe pas
     const regularResult = await db.query(`
       SELECT 
         p.id, 
@@ -95,12 +199,15 @@ async function fetchProductsFromDB() {
         NULL as old_price,
         p.image_url,
         p.images,
-        '' as sku,
-        '' as store_reference,
-        '' as material,
-        0 as weight,
-        '' as dimensions,
-        true as active,
+        p.sku,
+        p.store_reference,
+        p.material,
+        p.weight,
+        p.dimensions,
+        p.active,
+        p.featured,
+        p.new,
+        p.store_type,
         p.brand as brand_name,
         c.name as category_name,
         'regular' as product_type,
@@ -121,7 +228,7 @@ async function fetchProductsFromDB() {
         ) as variants
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
-      WHERE p.price > 0
+      WHERE p.price > 0 AND p.active = true
       ORDER BY p.id
     `);
     
@@ -162,6 +269,21 @@ async function syncProductToStripe(product) {
     // Vérifier si le produit existe déjà
     const existingProduct = await getStripeProduct(uniqueId);
     
+    // Déterminer la collection en fonction des attributs du produit
+    let collection = 'Standard';
+    if (product.new) {
+      collection = 'Nouveautés';
+    } else if (product.featured) {
+      collection = 'Produits Vedettes';
+    } else if (product.old_price && product.old_price > product.price) {
+      collection = 'Promotions';
+    } else if (product.product_type === 'corner') {
+      collection = 'The Corner';
+    }
+    
+    // Structure hiérarchique de catégories simplifiée
+    const categoryHierarchy = product.category_name || '';
+    
     // Construire les données du produit
     const productData = {
       name: product.name,
@@ -173,11 +295,17 @@ async function syncProductToStripe(product) {
         original_id: product.id.toString(),
         brand: product.brand_name || '',
         category: product.category_name || '',
+        category_full: categoryHierarchy || '',
+        collection: collection,
         sku: product.sku || '',
         store_reference: product.store_reference || '',
         material: product.material || '',
         weight: product.weight ? product.weight.toString() : '',
-        dimensions: product.dimensions || ''
+        dimensions: product.dimensions || '',
+        store_type: product.store_type || '',
+        is_new: product.new ? 'true' : 'false',
+        is_featured: product.featured ? 'true' : 'false',
+        has_discount: (product.old_price && product.old_price > product.price) ? 'true' : 'false'
       }
     };
     
@@ -314,6 +442,11 @@ async function syncVariantsToStripe(variants, stripeProductId, dbProductId, prod
 async function syncProducts() {
   try {
     log('Démarrage de la synchronisation des produits avec Stripe...');
+    
+    // Supprimer tous les produits existants si CLEAN_PRODUCTS est activé
+    if (CLEAN_PRODUCTS) {
+      await cleanStripeProducts();
+    }
     
     // Récupérer tous les produits depuis la base de données
     let products = await fetchProductsFromDB();

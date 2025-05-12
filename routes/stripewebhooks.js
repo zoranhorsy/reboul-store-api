@@ -3,10 +3,31 @@ const router = express.Router();
 const Stripe = require('stripe');
 const bodyParser = require('body-parser');
 const pool = require('../db');
+const nodemailer = require('nodemailer');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16',
 });
+
+// Fonction utilitaire pour envoyer un email avec Nodemailer
+async function sendEmail({ to, subject, text }) {
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+
+  await transporter.sendMail({
+    from: `"Reboul Store" <${process.env.SMTP_USER}>`,
+    to,
+    subject,
+    text,
+  });
+}
 
 // Fonction pour mettre à jour le statut de paiement d'une commande
 async function updateOrderPaymentStatus(orderNumber, status, paymentData = {}) {
@@ -125,6 +146,30 @@ async function handleFailedPayment(event) {
 async function handleCheckoutCompleted(event) {
   const session = event.data.object;
   console.log(`Session Checkout complétée: ${session.id}`);
+  
+  // Vérification automatique pour l'option coursier Marseille
+  const shippingOption = session.shipping_option?.shipping_rate?.display_name || '';
+  const postalCode = session.shipping?.address?.postal_code || '';
+
+  if (
+    shippingOption.toLowerCase().includes('coursier') &&
+    !postalCode.startsWith('13')
+  ) {
+    // Exemple d'envoi d'email (à adapter selon ton service d'email)
+    if (session.customer_details?.email) {
+      try {
+        await sendEmail({
+          to: session.customer_details.email,
+          subject: "Livraison coursier non disponible pour votre adresse",
+          text: `Bonjour, vous avez choisi la livraison coursier, mais votre adresse n'est pas à Marseille. Nous allons vous contacter pour trouver la meilleure solution (autre mode de livraison ou remboursement de la différence).`
+        });
+      } catch (e) {
+        console.error('Erreur lors de l\'envoi de l\'email au client coursier hors Marseille:', e);
+      }
+    }
+    // Log interne pour l'équipe Reboul
+    console.log(`[ALERTE] Livraison coursier sélectionnée hors Marseille pour la commande ${session.id} (code postal: ${postalCode})`);
+  }
   
   // Extraire les métadonnées
   const orderNumber = session.metadata?.order_number;
