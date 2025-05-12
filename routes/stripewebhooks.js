@@ -9,6 +9,9 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16',
 });
 
+console.log('SMTP_USER:', process.env.SMTP_USER);
+console.log('SMTP_PASS:', process.env.SMTP_PASS ? '***' : 'MISSING');
+
 // Fonction utilitaire pour envoyer un email avec Nodemailer
 async function sendEmail({ to, subject, text }) {
   const transporter = nodemailer.createTransport({
