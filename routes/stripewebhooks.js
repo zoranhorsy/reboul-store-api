@@ -32,19 +32,6 @@ async function sendEmail({ to, subject, text }) {
   });
 }
 
-// Test d'envoi d'email Nodemailer au démarrage
-//(async () => {
-  try {
-    await sendEmail({
-      to: process.env.SMTP_USER,
-      subject: 'Test Nodemailer Reboul',
-      text: 'Ceci est un test automatique de Nodemailer depuis Reboul.'
-    });
-    console.log('✅ Email de test Nodemailer envoyé avec succès');
-  } catch (e) {
-    console.error('❌ Erreur lors de l\'envoi de l\'email de test Nodemailer:', e);
-  }
-//})();
 
 // Fonction pour mettre à jour le statut de paiement d'une commande
 async function updateOrderPaymentStatus(orderNumber, status, paymentData = {}) {
