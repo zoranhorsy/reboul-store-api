@@ -33,7 +33,7 @@ async function sendEmail({ to, subject, text }) {
 }
 
 // Test d'envoi d'email Nodemailer au démarrage
-(async () => {
+//(async () => {
   try {
     await sendEmail({
       to: process.env.SMTP_USER,
@@ -44,7 +44,7 @@ async function sendEmail({ to, subject, text }) {
   } catch (e) {
     console.error('❌ Erreur lors de l\'envoi de l\'email de test Nodemailer:', e);
   }
-})();
+//})();
 
 // Fonction pour mettre à jour le statut de paiement d'une commande
 async function updateOrderPaymentStatus(orderNumber, status, paymentData = {}) {
@@ -170,22 +170,45 @@ async function handleCheckoutCompleted(event) {
 
   if (
     shippingOption.toLowerCase().includes('coursier') &&
-    !postalCode.startsWith('13')
+    !String(postalCode).startsWith('13')
   ) {
-    // Exemple d'envoi d'email (à adapter selon ton service d'email)
+    // 1. Remboursement automatique
+    try {
+      await stripe.refunds.create({
+        payment_intent: session.payment_intent,
+        reason: 'requested_by_customer',
+      });
+      console.log(`[ALERTE] Paiement remboursé automatiquement pour commande ${session.id} (coursier hors Marseille)`);
+    } catch (e) {
+      console.error('Erreur lors du remboursement automatique Stripe:', e);
+    }
+
+    // 2. Email au client
     if (session.customer_details?.email) {
       try {
         await sendEmail({
           to: session.customer_details.email,
           subject: "Livraison coursier non disponible pour votre adresse",
-          text: `Bonjour, vous avez choisi la livraison coursier, mais votre adresse n'est pas à Marseille. Nous allons vous contacter pour trouver la meilleure solution (autre mode de livraison ou remboursement de la différence).`
+          text: `Bonjour, vous avez choisi la livraison coursier, mais votre adresse n'est pas à Marseille. Votre paiement a été remboursé automatiquement. N'hésitez pas à choisir un autre mode de livraison.`
         });
       } catch (e) {
         console.error('Erreur lors de l\'envoi de l\'email au client coursier hors Marseille:', e);
       }
     }
-    // Log interne pour l'équipe Reboul
-    console.log(`[ALERTE] Livraison coursier sélectionnée hors Marseille pour la commande ${session.id} (code postal: ${postalCode})`);
+
+    // 3. Email à l'équipe Reboul
+    try {
+      await sendEmail({
+        to: 'horsydevservices@gmail.com',
+        subject: `[ALERTE] Livraison coursier refusée et remboursée` ,
+        text: `Commande Stripe ${session.id} : livraison coursier refusée et remboursée (code postal: ${postalCode}, client: ${session.customer_details?.email || 'inconnu'})`
+      });
+    } catch (e) {
+      console.error('Erreur lors de l\'envoi de l\'email à l\'équipe Reboul:', e);
+    }
+
+    // 4. Log interne
+    console.log(`[ALERTE] Livraison coursier refusée et remboursée pour la commande ${session.id} (code postal: ${postalCode})`);
   }
   
   // Extraire les métadonnées
