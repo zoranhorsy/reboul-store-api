@@ -157,11 +157,13 @@ async function handleCheckoutCompleted(event) {
   // Nouvelle logique pour détecter l'option coursier
   const postalCode = session.shipping_details?.address?.postal_code || '';
   const chosenShippingRate = session.shipping_cost?.shipping_rate || '';
+  console.log('DEBUG shipping_rate choisi:', chosenShippingRate, 'postalCode:', postalCode);
 
   if (
     chosenShippingRate === COURIER_SHIPPING_RATE_ID &&
     !String(postalCode).startsWith('13')
   ) {
+    console.log('>>> CONDITION COURSER HORS 13 TRIGGERED <<<');
     // 1. Remboursement automatique
     try {
       await stripe.refunds.create({
