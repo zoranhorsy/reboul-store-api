@@ -154,55 +154,6 @@ async function handleCheckoutCompleted(event) {
   const session = event.data.object;
   console.log(`Session Checkout complétée: ${session.id}`);
 
-  // Nouvelle logique pour détecter l'option coursier via metadata
-  const shippingMethod = session.metadata?.shipping_method || '';
-  const postalCode = session.shipping_details?.address?.postal_code || '';
-  console.log('DEBUG shipping_method:', shippingMethod, 'postalCode:', postalCode);
-
-  if (
-    shippingMethod.toLowerCase().includes('coursier') &&
-    !String(postalCode).startsWith('13')
-  ) {
-    console.log('>>> CONDITION COURSER HORS 13 TRIGGERED <<<');
-    // 1. Remboursement automatique
-    try {
-      await stripe.refunds.create({
-        payment_intent: session.payment_intent,
-        reason: 'requested_by_customer',
-      });
-      console.log(`[ALERTE] Paiement remboursé automatiquement pour commande ${session.id} (coursier hors Marseille)`);
-    } catch (e) {
-      console.error('Erreur lors du remboursement automatique Stripe:', e);
-    }
-
-    // 2. Email au client
-    if (session.customer_details?.email) {
-      try {
-        await sendEmail({
-          to: session.customer_details.email,
-          subject: "Livraison coursier non disponible pour votre adresse",
-          text: `Bonjour, vous avez choisi la livraison coursier, mais votre adresse n'est pas à Marseille. Votre paiement a été remboursé automatiquement. N'hésitez pas à choisir un autre mode de livraison.`
-        });
-      } catch (e) {
-        console.error('Erreur lors de l\'envoi de l\'email au client coursier hors Marseille:', e);
-      }
-    }
-
-    // 3. Email à l'équipe Reboul
-    try {
-      await sendEmail({
-        to: 'horsydevservices@gmail.com',
-        subject: `[ALERTE] Livraison coursier refusée et remboursée` ,
-        text: `Commande Stripe ${session.id} : livraison coursier refusée et remboursée (code postal: ${postalCode}, client: ${session.customer_details?.email || 'inconnu'})`
-      });
-    } catch (e) {
-      console.error('Erreur lors de l\'envoi de l\'email à l\'équipe Reboul:', e);
-    }
-
-    // 4. Log interne
-    console.log(`[ALERTE] Livraison coursier refusée et remboursée pour la commande ${session.id} (code postal: ${postalCode})`);
-  }
-  
   // Extraire les métadonnées
   const orderNumber = session.metadata?.order_number;
   
