@@ -13,7 +13,7 @@ console.log('SMTP_USER:', process.env.SMTP_USER);
 console.log('SMTP_PASS:', process.env.SMTP_PASS ? '***' : 'MISSING');
 
 // ID Stripe du shipping_rate pour le service coursier (à adapter si besoin)
-const COURIER_SHIPPING_RATE_ID = 'shr_1RNweSCvFAONCF3NAYXKOKF1';
+const COURIER_SHIPPING_RATE_ID = 'shr_1RNwrWCvFAONCF3NWgfySCns';
 
 // Fonction utilitaire pour envoyer un email avec Nodemailer
 async function sendEmail({ to, subject, text }) {
