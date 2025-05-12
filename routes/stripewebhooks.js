@@ -12,6 +12,9 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
 console.log('SMTP_USER:', process.env.SMTP_USER);
 console.log('SMTP_PASS:', process.env.SMTP_PASS ? '***' : 'MISSING');
 
+// ID Stripe du shipping_rate pour le service coursier (à adapter si besoin)
+const COURIER_SHIPPING_RATE_ID = 'shr_1RNweSCvFAONCF3NAYXKOKF1';
+
 // Fonction utilitaire pour envoyer un email avec Nodemailer
 async function sendEmail({ to, subject, text }) {
   const transporter = nodemailer.createTransport({
@@ -150,13 +153,13 @@ async function handleFailedPayment(event) {
 async function handleCheckoutCompleted(event) {
   const session = event.data.object;
   console.log(`Session Checkout complétée: ${session.id}`);
-  
-  // Vérification automatique pour l'option coursier Marseille
-  const shippingOption = session.shipping_option?.shipping_rate?.display_name || '';
-  const postalCode = session.shipping?.address?.postal_code || '';
+
+  // Nouvelle logique pour détecter l'option coursier
+  const postalCode = session.shipping_details?.address?.postal_code || '';
+  const chosenShippingRate = session.shipping_cost?.shipping_rate || '';
 
   if (
-    shippingOption.toLowerCase().includes('coursier') &&
+    chosenShippingRate === COURIER_SHIPPING_RATE_ID &&
     !String(postalCode).startsWith('13')
   ) {
     // 1. Remboursement automatique
