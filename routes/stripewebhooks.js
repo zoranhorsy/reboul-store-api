@@ -154,13 +154,13 @@ async function handleCheckoutCompleted(event) {
   const session = event.data.object;
   console.log(`Session Checkout complétée: ${session.id}`);
 
-  // Nouvelle logique pour détecter l'option coursier
+  // Nouvelle logique pour détecter l'option coursier via metadata
+  const shippingMethod = session.metadata?.shipping_method || '';
   const postalCode = session.shipping_details?.address?.postal_code || '';
-  const chosenShippingRate = session.shipping_cost?.shipping_rate || '';
-  console.log('DEBUG shipping_rate choisi:', chosenShippingRate, 'postalCode:', postalCode);
+  console.log('DEBUG shipping_method:', shippingMethod, 'postalCode:', postalCode);
 
   if (
-    chosenShippingRate === COURIER_SHIPPING_RATE_ID &&
+    shippingMethod.toLowerCase().includes('coursier') &&
     !String(postalCode).startsWith('13')
   ) {
     console.log('>>> CONDITION COURSER HORS 13 TRIGGERED <<<');
