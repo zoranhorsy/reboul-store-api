@@ -4,6 +4,7 @@ const Stripe = require('stripe');
 const bodyParser = require('body-parser');
 const pool = require('../db');
 const nodemailer = require('nodemailer');
+const { sendStripePaymentConfirmation } = require('../config/mailer');
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16',
@@ -93,6 +94,26 @@ async function logStripeEvent(event) {
   }
 }
 
+// Fonction pour récupérer les détails complets d'une commande
+async function getOrderDetails(orderNumber) {
+  try {
+    const orderQuery = await pool.query(
+      `SELECT * FROM orders WHERE order_number = $1`,
+      [orderNumber]
+    );
+    
+    if (orderQuery.rows.length === 0) {
+      console.error(`Commande ${orderNumber} non trouvée dans la base de données`);
+      return null;
+    }
+    
+    return orderQuery.rows[0];
+  } catch (error) {
+    console.error(`Erreur lors de la récupération des détails de la commande ${orderNumber}:`, error);
+    return null;
+  }
+}
+
 // Fonction pour traiter un paiement réussi
 async function handleSuccessfulPayment(event) {
   const paymentIntent = event.data.object;
@@ -106,17 +127,33 @@ async function handleSuccessfulPayment(event) {
     return;
   }
   
-  // Mettre à jour le statut de la commande
-  const updateResult = await updateOrderPaymentStatus(orderNumber, 'paid', {
+  // Préparer les données de paiement
+  const paymentData = {
     paymentIntentId: paymentIntent.id,
     amount: paymentIntent.amount / 100,
     currency: paymentIntent.currency,
     paymentMethod: paymentIntent.payment_method_types[0],
     paidAt: new Date().toISOString()
-  });
+  };
+  
+  // Mettre à jour le statut de la commande
+  const updateResult = await updateOrderPaymentStatus(orderNumber, 'paid', paymentData);
 
   if (updateResult.success) {
     console.log(`Commande ${orderNumber} marquée comme payée avec succès`);
+    
+    // Récupérer les détails complets de la commande
+    const orderDetails = await getOrderDetails(orderNumber);
+    
+    if (orderDetails) {
+      try {
+        // Envoyer l'email de confirmation de paiement
+        await sendStripePaymentConfirmation(paymentData, orderDetails);
+        console.log(`Email de confirmation de paiement envoyé pour la commande ${orderNumber}`);
+      } catch (error) {
+        console.error(`Erreur lors de l'envoi de l'email de confirmation pour la commande ${orderNumber}:`, error.message);
+      }
+    }
   } else {
     console.error(`Erreur lors de la mise à jour de la commande ${orderNumber}:`, updateResult.message);
   }
@@ -162,18 +199,35 @@ async function handleCheckoutCompleted(event) {
     return;
   }
   
-  // Mettre à jour le statut de la commande
-  const updateResult = await updateOrderPaymentStatus(orderNumber, 'paid', {
+  // Préparer les données de paiement
+  const paymentData = {
     sessionId: session.id,
     amount: session.amount_total / 100,
     currency: session.currency,
     customerEmail: session.customer_details?.email,
     paymentStatus: session.payment_status,
+    paymentMethod: session.payment_method_types[0],
     paidAt: new Date().toISOString()
-  });
+  };
+  
+  // Mettre à jour le statut de la commande
+  const updateResult = await updateOrderPaymentStatus(orderNumber, 'paid', paymentData);
 
   if (updateResult.success) {
     console.log(`Commande ${orderNumber} marquée comme payée avec succès via Checkout`);
+    
+    // Récupérer les détails complets de la commande
+    const orderDetails = await getOrderDetails(orderNumber);
+    
+    if (orderDetails) {
+      try {
+        // Envoyer l'email de confirmation de paiement
+        await sendStripePaymentConfirmation(paymentData, orderDetails);
+        console.log(`Email de confirmation de paiement envoyé pour la commande ${orderNumber}`);
+      } catch (error) {
+        console.error(`Erreur lors de l'envoi de l'email de confirmation pour la commande ${orderNumber}:`, error.message);
+      }
+    }
   } else {
     console.error(`Erreur lors de la mise à jour de la commande ${orderNumber} via Checkout:`, updateResult.message);
   }
