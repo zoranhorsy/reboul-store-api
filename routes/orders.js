@@ -344,7 +344,7 @@ router.delete('/:id',
  * @access Private (admin only)
  */
 router.get('/associate-orphan-orders', authMiddleware, async (req, res) => {
-  const client = await pool.connect();
+  const client = await pool.pool.connect();
   try {
     await client.query('BEGIN');
     
@@ -413,7 +413,7 @@ let associationInterval;
 
 // Fonction pour associer automatiquement les commandes orphelines
 async function associateOrphanOrders() {
-  const client = await pool.connect();
+  const client = await pool.pool.connect();
   try {
     await client.query('BEGIN');
     
