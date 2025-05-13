@@ -9,6 +9,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16',
 });
 
+console.log('Initialisation de la connexion à la base de données...');
+console.log('DATABASE_URL:', process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, process.env.DATABASE_URL.indexOf('@') + 1) + '****@****' : 'MISSING');
 console.log('SMTP_USER:', process.env.SMTP_USER);
 console.log('SMTP_PASS:', process.env.SMTP_PASS ? '***' : 'MISSING');
 
@@ -789,4 +791,12 @@ router.post(
   }
 );
 
-module.exports = router;
+// Exposer les fonctions pour les tests
+module.exports = {
+  router,
+  handleSuccessfulPayment,
+  handleFailedPayment,
+  handleCheckoutCompleted,
+  updateOrderPaymentStatus,
+  getOrderDetails
+};

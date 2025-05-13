@@ -29,7 +29,14 @@ async function cleanupDatabase() {
     // Supprimer les données de test
     await client.query('BEGIN');
     await client.query('DELETE FROM orders WHERE order_number LIKE \'TEST-STRIPE-%\'');
-    await client.query('DELETE FROM stripe_events WHERE event_data->\'id\' LIKE \'TEST-STRIPE-%\'');
+    // Correction: Ne pas utiliser LIKE sur JSONB, mais plutôt récupérer les IDs pertinents
+    const stripeEventsToDelete = await client.query(
+      'SELECT id FROM stripe_events WHERE event_id LIKE \'TEST-STRIPE-%\''
+    );
+    if (stripeEventsToDelete.rows.length > 0) {
+      const eventIds = stripeEventsToDelete.rows.map(row => row.id);
+      await client.query('DELETE FROM stripe_events WHERE id = ANY($1)', [eventIds]);
+    }
     await client.query('COMMIT');
     console.log('Base de données nettoyée');
   } catch (err) {
