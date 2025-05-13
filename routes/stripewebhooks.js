@@ -473,7 +473,9 @@ async function handleFailedPayment(event) {
 // Fonction pour traiter une session Checkout complétée
 async function handleCheckoutCompleted(event) {
   const session = event.data.object;
+  console.log(`============ DÉBUT TRAITEMENT CHECKOUT COMPLETED ============`);
   console.log(`Session Checkout complétée: ${session.id}`);
+  console.log(`Session complète: ${JSON.stringify(session, null, 2)}`);
 
   // Extraire les métadonnées
   const orderNumber = session.metadata?.order_number;
@@ -496,17 +498,21 @@ async function handleCheckoutCompleted(event) {
   const userName = session.metadata?.user_name || session.customer_details?.name;
   const shippingMethod = session.metadata?.shipping_method;
   
-  console.log(`[DEBUG WEBHOOK] Informations de commande:`, {
+  console.log(`[DEBUG WEBHOOK] Informations de commande DÉTAILLÉES:`, {
     orderNumber,
     userId,
     accountEmail,
     customerProvidedEmail,
     finalEmail: userEmail,
-    isAuthenticatedUser
+    isAuthenticatedUser,
+    sessionId: session.id,
+    totalAmount: session.amount_total / 100,
+    paymentStatus: session.payment_status,
+    shippingMethod
   });
   
   if (!orderNumber) {
-    console.error('Aucun numéro de commande trouvé dans les métadonnées de la session:', session.id);
+    console.error('❌ ERREUR CRITIQUE: Aucun numéro de commande trouvé dans les métadonnées de la session:', session.id);
     return;
   }
   
@@ -517,6 +523,7 @@ async function handleCheckoutCompleted(event) {
   
   // Récupérer l'ID client Stripe s'il existe
   const stripeCustomerId = session.customer;
+  console.log(`ID Client Stripe: ${stripeCustomerId || 'Non trouvé'}`);
   
   // Récupérer les informations d'expédition
   const shippingDetails = session.shipping_details || {};
@@ -617,13 +624,14 @@ async function handleCheckoutCompleted(event) {
   };
   
   // Vérifier si une commande avec ce numéro existe déjà
+  console.log(`Vérification si la commande ${orderNumber} existe déjà dans la base de données...`);
   const orderCheck = await pool.query(
     'SELECT * FROM orders WHERE order_number = $1',
     [orderNumber]
   );
   
   if (orderCheck.rows.length > 0) {
-    console.log(`Commande existante trouvée: ${orderNumber}, mise à jour du statut de paiement`);
+    console.log(`✅ Commande existante trouvée: ${orderNumber}, mise à jour du statut de paiement`);
     
     // Mettre à jour le statut de la commande et ajouter les données de paiement
     const updateResult = await updateOrderPaymentStatus(orderNumber, 'paid', paymentData);
@@ -732,6 +740,7 @@ async function handleCheckoutCompleted(event) {
   // Tentons de trouver l'utilisateur par email si on a un email mais pas d'ID
   if (!userId && userEmail) {
     try {
+      console.log(`Recherche d'un utilisateur avec l'email: ${userEmail}`);
       const userQuery = await pool.query(
         'SELECT id FROM users WHERE email = $1',
         [userEmail]
@@ -739,15 +748,17 @@ async function handleCheckoutCompleted(event) {
       
       if (userQuery.rows.length > 0) {
         userId = userQuery.rows[0].id;
-        console.log(`Utilisateur trouvé par email pour nouvelle commande: ${userEmail}, ID: ${userId}`);
+        console.log(`✅ Utilisateur trouvé par email pour nouvelle commande: ${userEmail}, ID: ${userId}`);
+      } else {
+        console.log(`⚠️ Aucun utilisateur trouvé avec l'email: ${userEmail}`);
       }
     } catch (emailLookupError) {
-      console.error(`Erreur lors de la recherche d'utilisateur par email pour nouvelle commande:`, emailLookupError);
+      console.error(`❌ ERREUR lors de la recherche d'utilisateur par email pour nouvelle commande:`, emailLookupError);
     }
   }
   
   // Créons une nouvelle commande
-  console.log(`La commande ${orderNumber} n'existe pas encore, création à partir de la session`);
+  console.log(`⚠️ ATTENTION: La commande ${orderNumber} n'existe pas encore, création à partir de la session`);
   
   // Extraire et traiter le nom complet
   const fullName = userName || session.customer_details?.name || '';
@@ -755,11 +766,24 @@ async function handleCheckoutCompleted(event) {
   const firstName = nameParts[0] || '';
   const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
   
+  console.log(`Informations client extraites: ${firstName} ${lastName}, Email: ${userEmail}`);
+  
   // Créer la commande
   const client = await pool.pool.connect();
   try {
+    console.log(`🔄 TENTATIVE DE CRÉATION DE COMMANDE DANS LA BASE DE DONNÉES ===================`);
+    console.log(`Données utilisées pour la requête SQL:`);
+    console.log(`- user_id: ${userId}`);
+    console.log(`- total_amount: ${session.amount_total / 100}`);
+    console.log(`- status: processing`);
+    console.log(`- payment_status: paid`);
+    console.log(`- order_number: ${orderNumber}`);
+    console.log(`- stripe_session_id: ${session.id}`);
+    console.log(`- stripe_customer_id: ${stripeCustomerId}`);
+    
     await client.query('BEGIN');
     
+    console.log(`Exécution de la requête d'insertion...`);
     const orderResult = await client.query(
       `INSERT INTO orders 
       (user_id, total_amount, shipping_info, status, payment_status, order_number, payment_data, stripe_session_id, stripe_customer_id, customer_info) 
@@ -794,11 +818,17 @@ async function handleCheckoutCompleted(event) {
     );
     
     const newOrder = orderResult.rows[0];
+    console.log(`✅ COMMANDE CRÉÉE AVEC SUCCÈS: ID = ${newOrder.id}, Numéro = ${orderNumber}`);
     
     // Si des informations d'articles sont disponibles dans les métadonnées, les ajouter
     if (session.metadata?.items) {
       try {
+        console.log(`Traitement des articles de la commande depuis metadata.items:`);
+        console.log(`Contenu brut de metadata.items: ${session.metadata.items}`);
+        
         const itemsData = JSON.parse(session.metadata.items);
+        console.log(`Nombre d'articles à traiter: ${itemsData.length}`);
+        
         for (const item of itemsData) {
           try {
             console.log('Traitement de l\'item:', JSON.stringify(item));
@@ -814,7 +844,7 @@ async function handleCheckoutCompleted(event) {
             }
             
             if (isNaN(productId)) {
-              console.error(`ID de produit invalide: ${item.id}, impossible de l'ajouter à la commande`);
+              console.error(`❌ ID de produit invalide: ${item.id}, impossible de l'ajouter à la commande`);
               continue;
             }
 
@@ -823,48 +853,59 @@ async function handleCheckoutCompleted(event) {
             if (item.variant) {
               if (typeof item.variant === 'string') {
                 try {
+                  console.log(`Parsing du variant (string): ${item.variant}`);
                   variantInfo = JSON.parse(item.variant);
+                  console.log(`Variant parsé avec succès:`, variantInfo);
                 } catch (e) {
-                  console.error('Erreur lors du parsing du variant (string):', e);
+                  console.error(`❌ Erreur lors du parsing du variant (string):`, e);
                 }
               } else if (typeof item.variant === 'object') {
                 variantInfo = item.variant;
+                console.log(`Variant déjà sous forme d'objet:`, variantInfo);
               }
             }
             
             // Récupérer les informations du produit (notamment le nom)
+            console.log(`Recherche du produit ${productId} dans la base de données...`);
             const productResult = await client.query(
               'SELECT name, price FROM products WHERE id = $1',
               [productId]
             );
             
             if (productResult.rows.length === 0) {
-              console.error(`Produit non trouvé: ${productId}`);
+              console.error(`❌ Produit non trouvé dans la base de données: ${productId}`);
               continue;
             }
             
             const product = productResult.rows[0];
-            console.log(`Produit trouvé: ${product.name} (${productId})`);
+            console.log(`✅ Produit trouvé: ${product.name} (${productId}), prix: ${product.price}`);
             
-            console.log(`Insertion produit: ID=${productId}, Nom=${product.name}, Quantité=${item.quantity}, Variant=`, variantInfo);
+            console.log(`Insertion produit dans order_items: ID=${productId}, Nom=${product.name}, Quantité=${item.quantity}, Variant=`, variantInfo);
             
-            await client.query(
+            const orderItemResult = await client.query(
               `INSERT INTO order_items 
               (order_id, product_id, product_name, quantity, price, variant_info) 
-              VALUES ($1, $2, $3, $4, $5, $6)`,
+              VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
               [newOrder.id, productId, product.name, item.quantity, product.price, variantInfo]
             );
             
+            console.log(`✅ Article ajouté à la commande, ID: ${orderItemResult.rows[0].id}`);
+            
           } catch (itemError) {
-            console.error(`Erreur lors du traitement de l'item ${JSON.stringify(item)}:`, itemError);
+            console.error(`❌ ERREUR lors du traitement de l'item ${JSON.stringify(item)}:`, itemError);
           }
         }
       } catch (e) {
-        console.error('Erreur lors de l\'ajout des items:', e);
+        console.error('❌ ERREUR CRITIQUE lors de l\'ajout des items:', e);
+        console.error('Contenu brut de metadata.items qui a causé l\'erreur:', session.metadata.items);
       }
+    } else {
+      console.warn('⚠️ Aucun article trouvé dans les métadonnées de la session.');
     }
     
+    console.log('COMMIT de la transaction...');
     await client.query('COMMIT');
+    console.log('✅ COMMIT RÉUSSI: La commande et ses articles sont enregistrés dans la base de données');
     
     // Envoyer l'email de confirmation
     const paymentData = {
@@ -878,18 +919,55 @@ async function handleCheckoutCompleted(event) {
     };
     
     try {
+      console.log(`Envoi de l'email de confirmation pour la commande ${orderNumber}...`);
       await sendStripePaymentConfirmation(paymentData, newOrder);
-      console.log(`Email de confirmation envoyé pour la commande nouvellement créée ${orderNumber}`);
+      console.log(`✅ Email de confirmation envoyé pour la commande nouvellement créée ${orderNumber}`);
+      console.log(`============ FIN TRAITEMENT CHECKOUT COMPLETED AVEC SUCCÈS ============`);
       return;
     } catch (emailError) {
-      console.error(`Erreur lors de l'envoi de l'email pour ${orderNumber}:`, emailError.message);
+      console.error(`❌ Erreur lors de l'envoi de l'email pour ${orderNumber}:`, emailError.message);
     }
     
   } catch (dbError) {
     await client.query('ROLLBACK');
-    console.error('Erreur lors de la création de la commande:', dbError);
+    console.error('❌❌❌ ERREUR CRITIQUE: Échec création commande:', dbError);
+    console.error('Stack trace:', dbError.stack);
+    
+    // Log détaillé de l'erreur pour mieux comprendre
+    if (dbError.code) {
+      console.error(`Code erreur SQL: ${dbError.code}, Détail: ${dbError.detail}, Table: ${dbError.table}, Contrainte: ${dbError.constraint}`);
+    }
+    
+    // Tentative de sauvegarde d'urgence dans un fichier
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const emergencyLogFile = path.join(__dirname, '../logs/failed_orders.json');
+      
+      // Créer le dossier logs s'il n'existe pas
+      if (!fs.existsSync(path.join(__dirname, '../logs'))) {
+        fs.mkdirSync(path.join(__dirname, '../logs'), { recursive: true });
+      }
+      
+      const orderData = {
+        timestamp: new Date().toISOString(),
+        session_id: session.id,
+        order_number: orderNumber,
+        user_email: userEmail || session.customer_details?.email,
+        amount: session.amount_total / 100,
+        error: dbError.message,
+        metadata: session.metadata
+      };
+      
+      // Écrire dans le fichier
+      fs.appendFileSync(emergencyLogFile, JSON.stringify(orderData) + '\n');
+      console.log('✅ Sauvegarde d\'urgence réussie pour la commande dans:', emergencyLogFile);
+    } catch (e) {
+      console.error('❌ Échec de la sauvegarde d\'urgence:', e);
+    }
   } finally {
     client.release();
+    console.log(`============ FIN TRAITEMENT CHECKOUT COMPLETED ============`);
   }
 }
 
@@ -898,24 +976,48 @@ router.post(
   '/stripe',
   bodyParser.raw({ type: 'application/json' }),
   async (req, res) => {
+    console.log(`========== WEBHOOK STRIPE REÇU ==========`);
+    console.log(`Headers:`, req.headers);
+    
     const sig = req.headers['stripe-signature'];
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    
+    console.log(`Signature reçue: ${sig ? 'OUI' : 'NON'}`);
+    console.log(`Secret configuré: ${endpointSecret ? 'OUI' : 'NON'}`);
+    
+    if (!sig) {
+      console.error('❌ Pas de signature Stripe dans les headers');
+      return res.status(400).send(`Webhook Error: Pas de signature Stripe`);
+    }
+    
+    if (!endpointSecret) {
+      console.error('❌ Pas de STRIPE_WEBHOOK_SECRET configuré');
+      return res.status(500).send(`Webhook Error: Pas de webhook secret configuré`);
+    }
 
     let event;
 
     try {
+      console.log(`Vérification de la signature avec constructEvent...`);
       event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-      console.log(`Événement Stripe reçu: ${event.type} (${event.id})`);
+      console.log(`✅ Événement Stripe reçu et vérifié: ${event.type} (${event.id})`);
     } catch (err) {
-      console.error('⚠️  Webhook signature verification failed.', err.message);
+      console.error('❌ Webhook signature verification failed.', err.message);
+      console.error('Details:', {
+        message: err.message,
+        type: err.type,
+        signature: sig.substring(0, 20) + '...'
+      });
       return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
     // Enregistrer l'événement dans la base de données (asynchrone)
-    logStripeEvent(event).catch(err => console.error('Erreur lors de l\'enregistrement de l\'événement:', err));
+    console.log(`Enregistrement de l'événement dans la base de données...`);
+    logStripeEvent(event).catch(err => console.error('❌ Erreur lors de l\'enregistrement de l\'événement:', err));
 
     // Traiter l'événement
     try {
+      console.log(`Traitement de l'événement ${event.type}...`);
       switch (event.type) {
         case 'checkout.session.completed':
           await handleCheckoutCompleted(event);
@@ -927,15 +1029,18 @@ router.post(
           await handleFailedPayment(event);
           break;
         default:
-          console.log(`Événement non géré: ${event.type}`);
+          console.log(`⚠️ Événement non géré: ${event.type}`);
       }
 
       // Répondre rapidement au webhook
+      console.log(`✅ Traitement terminé, réponse au webhook avec code 200`);
       res.status(200).json({ received: true });
     } catch (error) {
-      console.error(`Erreur lors du traitement de l'événement ${event.type}:`, error);
+      console.error(`❌ ERREUR CRITIQUE lors du traitement de l'événement ${event.type}:`, error);
+      console.error('Stack trace:', error.stack);
       res.status(200).json({ received: true }); // Toujours répondre 200 pour éviter les réessais de Stripe
     }
+    console.log(`========== FIN WEBHOOK STRIPE ==========`);
   }
 );
 
