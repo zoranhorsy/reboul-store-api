@@ -239,7 +239,7 @@ async function handleSuccessfulPayment(event) {
         const sessionResult = await pool.query(
           `SELECT event_data FROM stripe_events 
            WHERE event_type = 'checkout.session.completed' 
-           AND event_data->>'data'->>'object'->>'payment_intent' = $1
+           AND event_data::jsonb #>> '{data,object,payment_intent}' = $1
            ORDER BY created_at DESC LIMIT 1`,
           [paymentIntent.id]
         );
