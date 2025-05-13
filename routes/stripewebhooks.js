@@ -658,13 +658,27 @@ async function handleCheckoutCompleted(event) {
                   }
                 }
                 
-                console.log(`Insertion produit: ID=${productId}, Quantité=${item.quantity}, Variant=`, variantInfo);
+                // Récupérer les informations du produit (notamment le nom)
+                const productResult = await client.query(
+                  'SELECT name, price FROM products WHERE id = $1',
+                  [productId]
+                );
+                
+                if (productResult.rows.length === 0) {
+                  console.error(`Produit non trouvé: ${productId}`);
+                  continue;
+                }
+                
+                const product = productResult.rows[0];
+                console.log(`Produit trouvé: ${product.name} (${productId})`);
+                
+                console.log(`Insertion produit: ID=${productId}, Nom=${product.name}, Quantité=${item.quantity}, Variant=`, variantInfo);
                 
                 await client.query(
                   `INSERT INTO order_items 
-                  (order_id, product_id, quantity, variant_info) 
-                  VALUES ($1, $2, $3, $4)`,
-                  [newOrder.id, productId, item.quantity, variantInfo]
+                  (order_id, product_id, product_name, quantity, price, variant_info) 
+                  VALUES ($1, $2, $3, $4, $5, $6)`,
+                  [newOrder.id, productId, product.name, item.quantity, product.price, variantInfo]
                 );
                 
               } catch (itemError) {
@@ -795,13 +809,27 @@ async function handleCheckoutCompleted(event) {
                   }
                 }
                 
-                console.log(`Insertion produit: ID=${productId}, Quantité=${item.quantity}, Variant=`, variantInfo);
+                // Récupérer les informations du produit (notamment le nom)
+                const productResult = await client.query(
+                  'SELECT name, price FROM products WHERE id = $1',
+                  [productId]
+                );
+                
+                if (productResult.rows.length === 0) {
+                  console.error(`Produit non trouvé: ${productId}`);
+                  continue;
+                }
+                
+                const product = productResult.rows[0];
+                console.log(`Produit trouvé: ${product.name} (${productId})`);
+                
+                console.log(`Insertion produit: ID=${productId}, Nom=${product.name}, Quantité=${item.quantity}, Variant=`, variantInfo);
                 
                 await client.query(
                   `INSERT INTO order_items 
-                  (order_id, product_id, quantity, variant_info) 
-                  VALUES ($1, $2, $3, $4)`,
-                  [newOrder.id, productId, item.quantity, variantInfo]
+                  (order_id, product_id, product_name, quantity, price, variant_info) 
+                  VALUES ($1, $2, $3, $4, $5, $6)`,
+                  [newOrder.id, productId, product.name, item.quantity, product.price, variantInfo]
                 );
                 
               } catch (itemError) {
