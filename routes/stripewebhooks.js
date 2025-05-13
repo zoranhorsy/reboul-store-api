@@ -231,7 +231,129 @@ async function handleSuccessfulPayment(event) {
   const orderNumber = paymentIntent.metadata.order_number;
   
   if (!orderNumber) {
-    console.error('Aucun numéro de commande trouvé dans les métadonnées du paiement:', paymentIntent.id);
+    console.log('Aucun numéro de commande trouvé dans les métadonnées du paiement:', paymentIntent.id);
+    
+    try {
+      // Chercher si une commande existe déjà avec ce payment_intent
+      const orderQuery = await pool.query(
+        `SELECT * FROM orders WHERE payment_data->>'paymentIntentId' = $1`,
+        [paymentIntent.id]
+      );
+      
+      if (orderQuery.rows.length > 0) {
+        // Une commande existe déjà, on met simplement à jour son statut
+        const orderDetails = orderQuery.rows[0];
+        console.log(`Commande trouvée pour le payment_intent ${paymentIntent.id}: ${orderDetails.order_number}`);
+        
+        // Préparer les données de paiement
+        const paymentData = {
+          paymentIntentId: paymentIntent.id,
+          amount: paymentIntent.amount / 100,
+          currency: paymentIntent.currency,
+          paymentMethod: paymentIntent.payment_method_types?.[0] || 'card',
+          paidAt: new Date().toISOString()
+        };
+        
+        // Mettre à jour le statut
+        const updateResult = await updateOrderPaymentStatus(orderDetails.order_number, 'paid', paymentData);
+        
+        if (updateResult.success) {
+          try {
+            // Envoyer l'email de confirmation
+            await sendStripePaymentConfirmation(paymentData, orderDetails);
+            console.log(`Email de confirmation envoyé pour la commande ${orderDetails.order_number}`);
+          } catch (emailError) {
+            console.error(`Erreur lors de l'envoi de l'email pour ${orderDetails.order_number}:`, emailError.message);
+          }
+        }
+        
+        return;
+      }
+      
+      // Essayer de trouver une commande par le shipping ou customer_details
+      if (paymentIntent.shipping) {
+        console.log('Recherche de commande par shipping details');
+        // Recherche par email ou adresse de livraison
+        // Cette logique dépend de votre structure de données
+      }
+      
+      // Si on arrive ici, on n'a pas trouvé de commande existante
+      // Créons une nouvelle commande
+      console.log('Création d\'une commande à partir des données du payment_intent');
+      
+      // Générer un numéro de commande unique
+      const newOrderNumber = `ORD-${Date.now()}`;
+      const client = await pool.pool.connect();
+      
+      try {
+        await client.query('BEGIN');
+        
+        // Créer la commande avec les infos disponibles
+        const orderResult = await client.query(
+          `INSERT INTO orders 
+          (total_amount, shipping_info, status, payment_status, order_number, payment_data) 
+          VALUES ($1, $2, $3, $4, $5, $6) 
+          RETURNING *`,
+          [
+            paymentIntent.amount / 100,
+            {
+              firstName: paymentIntent.shipping?.name?.split(' ')[0] || '',
+              lastName: paymentIntent.shipping?.name?.split(' ')[1] || '',
+              email: paymentIntent.receipt_email,
+              address: paymentIntent.shipping?.address?.line1,
+              city: paymentIntent.shipping?.address?.city,
+              postalCode: paymentIntent.shipping?.address?.postal_code,
+              country: paymentIntent.shipping?.address?.country
+            },
+            'processing', // statut de la commande
+            'paid', // statut du paiement
+            newOrderNumber,
+            {
+              paymentIntentId: paymentIntent.id,
+              amount: paymentIntent.amount / 100,
+              currency: paymentIntent.currency,
+              paidAt: new Date().toISOString()
+            }
+          ]
+        );
+        
+        const newOrder = orderResult.rows[0];
+        
+        await client.query('COMMIT');
+        
+        // Envoyer un email de confirmation si possible
+        if (paymentIntent.receipt_email) {
+          const paymentData = {
+            paymentIntentId: paymentIntent.id,
+            amount: paymentIntent.amount / 100,
+            currency: paymentIntent.currency,
+            customerEmail: paymentIntent.receipt_email,
+            paymentStatus: 'paid',
+            paymentMethod: paymentIntent.payment_method_types?.[0] || 'card',
+            paidAt: new Date().toISOString()
+          };
+          
+          try {
+            await sendStripePaymentConfirmation(paymentData, newOrder);
+            console.log(`Email de confirmation envoyé pour la nouvelle commande ${newOrderNumber}`);
+          } catch (emailError) {
+            console.error(`Erreur lors de l'envoi de l'email pour ${newOrderNumber}:`, emailError.message);
+          }
+        } else {
+          console.log(`Pas d'email disponible pour envoyer une confirmation pour ${newOrderNumber}`);
+        }
+        
+      } catch (dbError) {
+        await client.query('ROLLBACK');
+        console.error('Erreur lors de la création de la commande:', dbError);
+      } finally {
+        client.release();
+      }
+      
+    } catch (error) {
+      console.error('Erreur lors de la recherche/création de commande pour payment_intent:', error);
+    }
+    
     return;
   }
   
@@ -240,7 +362,7 @@ async function handleSuccessfulPayment(event) {
     paymentIntentId: paymentIntent.id,
     amount: paymentIntent.amount / 100,
     currency: paymentIntent.currency,
-    paymentMethod: paymentIntent.payment_method_types[0],
+    paymentMethod: paymentIntent.payment_method_types?.[0] || 'card',
     paidAt: new Date().toISOString()
   };
   
@@ -303,7 +425,155 @@ async function handleCheckoutCompleted(event) {
   const orderNumber = session.metadata?.order_number;
   
   if (!orderNumber) {
-    console.error('Aucun numéro de commande trouvé dans les métadonnées de la session:', session.id);
+    console.log('Aucun numéro de commande trouvé dans les métadonnées de la session:', session.id);
+    // Tenter de trouver la commande via le payment_intent
+    if (session.payment_intent) {
+      console.log('Tentative de récupération via payment_intent:', session.payment_intent);
+      try {
+        // Rechercher si une commande existe avec ce payment_intent
+        const orderQuery = await pool.query(
+          `SELECT * FROM orders WHERE 
+          payment_data->>'paymentIntentId' = $1 OR 
+          stripe_session_id = $2`,
+          [session.payment_intent, session.id]
+        );
+        
+        if (orderQuery.rows.length > 0) {
+          const orderDetails = orderQuery.rows[0];
+          console.log(`Commande trouvée via payment_intent: ${orderDetails.order_number}`);
+          
+          // Préparer les données de paiement
+          const paymentData = {
+            sessionId: session.id,
+            paymentIntentId: session.payment_intent,
+            amount: session.amount_total / 100,
+            currency: session.currency,
+            customerEmail: session.customer_details?.email,
+            paymentStatus: session.payment_status,
+            paymentMethod: session.payment_method_types[0] || 'card',
+            paidAt: new Date().toISOString()
+          };
+          
+          // Mettre à jour le statut de paiement
+          const updateResult = await updateOrderPaymentStatus(orderDetails.order_number, 'paid', paymentData);
+          
+          if (updateResult.success) {
+            try {
+              // Envoyer l'email de confirmation
+              await sendStripePaymentConfirmation(paymentData, orderDetails);
+              console.log(`Email de confirmation envoyé pour la commande ${orderDetails.order_number}`);
+            } catch (emailError) {
+              console.error(`Erreur lors de l'envoi de l'email pour ${orderDetails.order_number}:`, emailError.message);
+            }
+          }
+          return;
+        }
+      } catch (error) {
+        console.error('Erreur lors de la recherche de commande par payment_intent:', error);
+      }
+    }
+    
+    // Si on arrive ici, on n'a pas trouvé de commande existante
+    // On pourrait créer une commande à partir des informations de la session
+    console.log('Création d\'une commande à partir des données de la session');
+    
+    try {
+      // Générer un numéro de commande unique
+      const newOrderNumber = `ORD-${Date.now()}`;
+      const client = await pool.pool.connect();
+      
+      try {
+        await client.query('BEGIN');
+        
+        // Créer la commande
+        const orderResult = await client.query(
+          `INSERT INTO orders 
+          (total_amount, shipping_info, status, payment_status, order_number, payment_data, stripe_session_id) 
+          VALUES ($1, $2, $3, $4, $5, $6, $7) 
+          RETURNING *`,
+          [
+            session.amount_total / 100,
+            {
+              firstName: session.customer_details?.name?.split(' ')[0] || '',
+              lastName: session.customer_details?.name?.split(' ')[1] || '',
+              email: session.customer_details?.email,
+              phone: session.customer_details?.phone,
+              address: session.shipping_details?.address?.line1,
+              city: session.shipping_details?.address?.city,
+              postalCode: session.shipping_details?.address?.postal_code,
+              country: session.shipping_details?.address?.country
+            },
+            'processing', // statut de la commande
+            'paid', // statut du paiement
+            newOrderNumber,
+            {
+              sessionId: session.id,
+              paymentIntentId: session.payment_intent,
+              amount: session.amount_total / 100,
+              currency: session.currency,
+              paidAt: new Date().toISOString()
+            }, 
+            session.id
+          ]
+        );
+        
+        const newOrder = orderResult.rows[0];
+        
+        // Si des informations d'articles sont disponibles dans les métadonnées, les ajouter
+        if (session.metadata?.items) {
+          try {
+            const itemsData = JSON.parse(session.metadata.items);
+            for (const item of itemsData) {
+              let variant = {};
+              try {
+                variant = item.variant ? JSON.parse(item.variant) : {};
+              } catch (e) {
+                console.error('Erreur de parsing du variant:', e);
+              }
+              
+              await client.query(
+                `INSERT INTO order_items 
+                (order_id, product_id, quantity, variant_info) 
+                VALUES ($1, $2, $3, $4)`,
+                [newOrder.id, item.id, item.quantity, variant]
+              );
+            }
+          } catch (e) {
+            console.error('Erreur lors de l\'ajout des items:', e);
+          }
+        }
+        
+        await client.query('COMMIT');
+        
+        // Envoyer un email de confirmation
+        const paymentData = {
+          sessionId: session.id,
+          paymentIntentId: session.payment_intent,
+          amount: session.amount_total / 100,
+          currency: session.currency,
+          customerEmail: session.customer_details?.email,
+          paymentStatus: session.payment_status,
+          paymentMethod: session.payment_method_types[0] || 'card',
+          paidAt: new Date().toISOString()
+        };
+        
+        try {
+          await sendStripePaymentConfirmation(paymentData, newOrder);
+          console.log(`Email de confirmation envoyé pour la nouvelle commande ${newOrderNumber}`);
+        } catch (emailError) {
+          console.error(`Erreur lors de l'envoi de l'email pour ${newOrderNumber}:`, emailError.message);
+        }
+        
+      } catch (dbError) {
+        await client.query('ROLLBACK');
+        console.error('Erreur lors de la création de la commande:', dbError);
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error('Erreur lors de la création d\'une nouvelle commande:', error);
+    }
+    
     return;
   }
   
@@ -314,7 +584,7 @@ async function handleCheckoutCompleted(event) {
     currency: session.currency,
     customerEmail: session.customer_details?.email,
     paymentStatus: session.payment_status,
-    paymentMethod: session.payment_method_types[0],
+    paymentMethod: session.payment_method_types[0] || 'card',
     paidAt: new Date().toISOString()
   };
   
