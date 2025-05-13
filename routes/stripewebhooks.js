@@ -609,7 +609,18 @@ async function handleCheckoutCompleted(event) {
   
   console.log(`[DEBUG WEBHOOK] customer_info à stocker:`, JSON.stringify(customerInfo, null, 2));
   
-  // Préparer les données de paiement
+  // Créons une nouvelle commande
+  console.log(`⚠️ ATTENTION: La commande ${orderNumber} n'existe pas encore, création à partir de la session`);
+  
+  // Extraire et traiter le nom complet
+  const fullName = userName || session.customer_details?.name || '';
+  const nameParts = fullName.split(' ');
+  const firstName = nameParts[0] || '';
+  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+  
+  console.log(`Informations client extraites: ${firstName} ${lastName}, Email: ${userEmail}`);
+  
+  // Préparer les données de paiement avant de les utiliser
   const paymentData = {
     sessionId: session.id,
     paymentIntentId: session.payment_intent,
@@ -622,151 +633,6 @@ async function handleCheckoutCompleted(event) {
     deliveryType: deliveryType,
     paidAt: new Date().toISOString()
   };
-  
-  // Vérifier si une commande avec ce numéro existe déjà
-  console.log(`Vérification si la commande ${orderNumber} existe déjà dans la base de données...`);
-  const orderCheck = await pool.query(
-    'SELECT * FROM orders WHERE order_number = $1',
-    [orderNumber]
-  );
-  
-  if (orderCheck.rows.length > 0) {
-    console.log(`✅ Commande existante trouvée: ${orderNumber}, mise à jour du statut de paiement`);
-    
-    // Mettre à jour le statut de la commande et ajouter les données de paiement
-    const updateResult = await updateOrderPaymentStatus(orderNumber, 'paid', paymentData);
-    
-    if (updateResult.success) {
-      console.log(`Commande ${orderNumber} marquée comme payée avec succès`);
-      
-      // Si la commande n'a pas d'ID utilisateur mais qu'on en a un maintenant, mettre à jour
-      if (updatedUserId && !orderCheck.rows[0].user_id) {
-        try {
-          await pool.query(
-            'UPDATE orders SET user_id = $1 WHERE order_number = $2',
-            [updatedUserId, orderNumber]
-          );
-          console.log(`ID utilisateur ${updatedUserId} ajouté à la commande ${orderNumber}`);
-        } catch (userIdError) {
-          console.error(`Erreur lors de la mise à jour de l'ID utilisateur pour ${orderNumber}:`, userIdError);
-        }
-      }
-      
-      // Mettre à jour les informations de client Stripe
-      if (stripeCustomerId) {
-        try {
-          console.log(`[DEBUG WEBHOOK] Mise à jour de stripe_customer_id et customer_info pour la commande ${orderNumber}`);
-          console.log(`[DEBUG WEBHOOK] SQL: UPDATE orders SET stripe_customer_id = '${stripeCustomerId}', customer_info = '${JSON.stringify(customerInfo)}' WHERE order_number = '${orderNumber}'`);
-          
-          await pool.query(
-            'UPDATE orders SET stripe_customer_id = $1, customer_info = $2 WHERE order_number = $3',
-            [stripeCustomerId, customerInfo, orderNumber]
-          );
-          console.log(`ID client Stripe ${stripeCustomerId} ajouté à la commande ${orderNumber}`);
-          
-          // Vérifions ce qui a été réellement stocké
-          const orderAfterUpdate = await pool.query(
-            'SELECT customer_info FROM orders WHERE order_number = $1',
-            [orderNumber]
-          );
-          
-          if (orderAfterUpdate.rows.length > 0) {
-            console.log(`[DEBUG WEBHOOK] customer_info effectivement stocké:`, 
-              JSON.stringify(orderAfterUpdate.rows[0].customer_info, null, 2));
-          }
-        } catch (customerIdError) {
-          console.error(`Erreur lors de la mise à jour de l'ID client Stripe pour ${orderNumber}:`, customerIdError);
-        }
-      }
-      
-      // Mettre à jour les informations d'expédition avec les détails de l'adresse de livraison Stripe
-      if (session.shipping_details) {
-        try {
-          const orderDetails = await getOrderDetails(orderNumber);
-          
-          if (orderDetails) {
-            // Fusionner les informations d'expédition existantes avec les nouvelles
-            const updatedShippingInfo = {
-              ...orderDetails.shipping_info,
-              firstName: session.customer_details?.name?.split(' ')[0] || orderDetails.shipping_info?.firstName || '',
-              lastName: session.customer_details?.name?.split(' ').slice(1).join(' ') || orderDetails.shipping_info?.lastName || '',
-              email: userEmail || session.customer_details?.email || orderDetails.shipping_info?.email,
-              phone: session.customer_details?.phone || orderDetails.shipping_info?.phone,
-              address: shippingAddress.line1,
-              addressLine2: shippingAddress.line2,
-              city: shippingAddress.city,
-              postalCode: shippingAddress.postal_code,
-              country: shippingAddress.country,
-              hasAddress: hasAddress,
-              addressType: 'shipping',
-              isValid: hasAddress,
-              deliveryType: deliveryType
-            };
-            
-            console.log(`Mise à jour des infos d'expédition: ${JSON.stringify(updatedShippingInfo, null, 2)}`);
-            
-            await pool.query(
-              'UPDATE orders SET shipping_info = $1 WHERE order_number = $2',
-              [updatedShippingInfo, orderNumber]
-            );
-            
-            console.log(`Informations d'expédition mises à jour pour la commande ${orderNumber}`);
-          }
-        } catch (shippingUpdateError) {
-          console.error(`Erreur lors de la mise à jour des informations d'expédition:`, shippingUpdateError);
-        }
-      }
-      
-      // Récupérer les détails complets de la commande mise à jour
-      const orderDetails = await getOrderDetails(orderNumber);
-      
-      if (orderDetails) {
-        try {
-          // Envoyer l'email de confirmation de paiement
-          await sendStripePaymentConfirmation(paymentData, orderDetails);
-          console.log(`Email de confirmation envoyé pour la commande ${orderNumber}`);
-        } catch (emailError) {
-          console.error(`Erreur lors de l'envoi de l'email pour ${orderNumber}:`, emailError.message);
-        }
-      }
-    } else {
-      console.error(`Erreur lors de la mise à jour de la commande ${orderNumber}:`, updateResult.message);
-    }
-    
-    return;
-  }
-  
-  // Si on arrive ici, on n'a pas trouvé de commande existante
-  // Tentons de trouver l'utilisateur par email si on a un email mais pas d'ID
-  if (!userId && userEmail) {
-    try {
-      console.log(`Recherche d'un utilisateur avec l'email: ${userEmail}`);
-      const userQuery = await pool.query(
-        'SELECT id FROM users WHERE email = $1',
-        [userEmail]
-      );
-      
-      if (userQuery.rows.length > 0) {
-        userId = userQuery.rows[0].id;
-        console.log(`✅ Utilisateur trouvé par email pour nouvelle commande: ${userEmail}, ID: ${userId}`);
-      } else {
-        console.log(`⚠️ Aucun utilisateur trouvé avec l'email: ${userEmail}`);
-      }
-    } catch (emailLookupError) {
-      console.error(`❌ ERREUR lors de la recherche d'utilisateur par email pour nouvelle commande:`, emailLookupError);
-    }
-  }
-  
-  // Créons une nouvelle commande
-  console.log(`⚠️ ATTENTION: La commande ${orderNumber} n'existe pas encore, création à partir de la session`);
-  
-  // Extraire et traiter le nom complet
-  const fullName = userName || session.customer_details?.name || '';
-  const nameParts = fullName.split(' ');
-  const firstName = nameParts[0] || '';
-  const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
-  
-  console.log(`Informations client extraites: ${firstName} ${lastName}, Email: ${userEmail}`);
   
   // Créer la commande
   const client = await pool.pool.connect();
@@ -907,17 +773,7 @@ async function handleCheckoutCompleted(event) {
     await client.query('COMMIT');
     console.log('✅ COMMIT RÉUSSI: La commande et ses articles sont enregistrés dans la base de données');
     
-    // Envoyer l'email de confirmation
-    const paymentData = {
-      sessionId: session.id,
-      amount: session.amount_total / 100,
-      currency: session.currency,
-      customerEmail: session.customer_details?.email,
-      paymentStatus: session.payment_status,
-      paymentMethod: session.payment_method_types?.[0] || 'card',
-      paidAt: new Date().toISOString()
-    };
-    
+    // Envoyer l'email de confirmation - Pas besoin de redéfinir paymentData ici car déjà défini plus haut
     try {
       console.log(`Envoi de l'email de confirmation pour la commande ${orderNumber}...`);
       await sendStripePaymentConfirmation(paymentData, newOrder);
