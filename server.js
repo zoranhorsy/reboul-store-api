@@ -406,3 +406,42 @@ process.on('uncaughtException', (error) => {
     process.exit(1);
 });
 
+// Middleware pour exécuter les migrations au démarrage du serveur
+const runStripeCustomerInfoMigration = async () => {
+  const client = await db.pool.connect();
+  try {
+    // Vérifier si la colonne stripe_customer_id existe déjà
+    const checkResult = await client.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'orders' AND column_name = 'stripe_customer_id'
+    `);
+
+    // Si la colonne n'existe pas, l'ajouter
+    if (checkResult.rows.length === 0) {
+      console.log('Exécution de la migration pour ajouter stripe_customer_id à la table orders');
+      
+      await client.query(`
+        ALTER TABLE orders
+        ADD COLUMN stripe_customer_id VARCHAR(255),
+        ADD COLUMN customer_info JSONB
+      `);
+      
+      console.log('Migration terminée: colonnes stripe_customer_id et customer_info ajoutées');
+    } else {
+      console.log('La colonne stripe_customer_id existe déjà dans la table orders');
+    }
+  } catch (error) {
+    console.error('Erreur lors de la migration stripe_customer_id:', error);
+  } finally {
+    client.release();
+  }
+};
+
+// Exécuter les migrations au démarrage
+if (process.env.ENABLE_AUTO_MIGRATIONS === 'true') {
+  runStripeCustomerInfoMigration().catch(err => {
+    console.error('Erreur lors de l\'exécution de la migration stripe_customer_id:', err);
+  });
+}
+

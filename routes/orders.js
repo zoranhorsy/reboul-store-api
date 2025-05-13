@@ -338,5 +338,150 @@ router.delete('/:id',
         }
     });
 
+/**
+ * Associe les commandes sans user_id à des utilisateurs existants en se basant sur l'email
+ * @route GET /api/orders/associate-orphan-orders
+ * @access Private (admin only)
+ */
+router.get('/associate-orphan-orders', authMiddleware, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // Rechercher les commandes sans user_id mais avec un email dans shipping_info
+    const orphanOrdersQuery = await client.query(`
+      SELECT o.id, o.order_number, o.shipping_info->>'email' as email 
+      FROM orders o 
+      WHERE o.user_id IS NULL 
+      AND o.shipping_info->>'email' IS NOT NULL
+    `);
+    
+    const orphanOrders = orphanOrdersQuery.rows;
+    console.log(`Trouvé ${orphanOrders.length} commandes orphelines à associer`);
+    
+    let associatedCount = 0;
+    
+    // Pour chaque commande orpheline, essayer de trouver un utilisateur correspondant
+    for (const order of orphanOrders) {
+      if (!order.email) continue;
+      
+      // Rechercher l'utilisateur par email
+      const userQuery = await client.query(
+        'SELECT id FROM users WHERE email = $1',
+        [order.email]
+      );
+      
+      if (userQuery.rows.length > 0) {
+        const userId = userQuery.rows[0].id;
+        
+        // Associer la commande à l'utilisateur
+        await client.query(
+          'UPDATE orders SET user_id = $1 WHERE id = $2',
+          [userId, order.id]
+        );
+        
+        console.log(`Commande ${order.order_number} associée à l'utilisateur ${userId}`);
+        associatedCount++;
+      }
+    }
+    
+    await client.query('COMMIT');
+    
+    res.json({
+      success: true,
+      message: `${associatedCount} commandes ont été associées à des utilisateurs existants`,
+      total: orphanOrders.length,
+      associated: associatedCount
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Erreur lors de l\'association des commandes orphelines:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Erreur lors de l\'association des commandes orphelines',
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
+/**
+ * Planifie l'exécution périodique de l'association des commandes orphelines
+ */
+let associationInterval;
+
+// Fonction pour associer automatiquement les commandes orphelines
+async function associateOrphanOrders() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // Rechercher les commandes sans user_id mais avec un email dans shipping_info
+    const orphanOrdersQuery = await client.query(`
+      SELECT o.id, o.order_number, o.shipping_info->>'email' as email,
+             o.payment_data->>'customerEmail' as payment_email
+      FROM orders o 
+      WHERE o.user_id IS NULL 
+      AND (o.shipping_info->>'email' IS NOT NULL OR o.payment_data->>'customerEmail' IS NOT NULL)
+    `);
+    
+    const orphanOrders = orphanOrdersQuery.rows;
+    
+    if (orphanOrders.length > 0) {
+      console.log(`Traitement automatique de ${orphanOrders.length} commandes orphelines`);
+    }
+    
+    let associatedCount = 0;
+    
+    // Pour chaque commande orpheline, essayer de trouver un utilisateur correspondant
+    for (const order of orphanOrders) {
+      const email = order.email || order.payment_email;
+      if (!email) continue;
+      
+      // Rechercher l'utilisateur par email
+      const userQuery = await client.query(
+        'SELECT id FROM users WHERE email = $1',
+        [email]
+      );
+      
+      if (userQuery.rows.length > 0) {
+        const userId = userQuery.rows[0].id;
+        
+        // Associer la commande à l'utilisateur
+        await client.query(
+          'UPDATE orders SET user_id = $1 WHERE id = $2',
+          [userId, order.id]
+        );
+        
+        console.log(`[Auto] Commande ${order.order_number} associée à l'utilisateur ${userId}`);
+        associatedCount++;
+      }
+    }
+    
+    await client.query('COMMIT');
+    
+    if (associatedCount > 0) {
+      console.log(`[Auto] ${associatedCount} commandes ont été associées à des utilisateurs existants`);
+    }
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('[Auto] Erreur lors de l\'association des commandes orphelines:', error);
+  } finally {
+    client.release();
+  }
+}
+
+// Démarrer le processus d'association automatique (toutes les 24 heures)
+if (process.env.ENABLE_AUTO_ORDER_ASSOCIATION === 'true') {
+  associationInterval = setInterval(associateOrphanOrders, 24 * 60 * 60 * 1000);
+  console.log('Processus d\'association automatique des commandes orphelines activé');
+  
+  // Exécuter immédiatement au démarrage du serveur
+  associateOrphanOrders().catch(err => {
+    console.error('Erreur lors de l\'association initiale des commandes orphelines:', err);
+  });
+}
+
 module.exports = router;
 
