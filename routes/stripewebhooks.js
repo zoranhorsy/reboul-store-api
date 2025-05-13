@@ -626,19 +626,50 @@ async function handleCheckoutCompleted(event) {
           try {
             const itemsData = JSON.parse(session.metadata.items);
             for (const item of itemsData) {
-              let variant = {};
               try {
-                variant = item.variant ? JSON.parse(item.variant) : {};
-              } catch (e) {
-                console.error('Erreur de parsing du variant:', e);
+                console.log('Traitement de l\'item:', JSON.stringify(item));
+                
+                // Extraire correctement l'ID numérique du produit
+                let productId;
+                if (typeof item.id === 'string' && item.id.includes('-')) {
+                  // Format: "72-EU 42-Argent" -> extraire juste "72"
+                  productId = parseInt(item.id.split('-')[0], 10);
+                  console.log(`ID produit extrait: ${productId} depuis ${item.id}`);
+                } else {
+                  productId = parseInt(item.id, 10);
+                }
+                
+                if (isNaN(productId)) {
+                  console.error(`ID de produit invalide: ${item.id}, impossible de l'ajouter à la commande`);
+                  continue;
+                }
+
+                // Parser le variant
+                let variantInfo = {};
+                if (item.variant) {
+                  if (typeof item.variant === 'string') {
+                    try {
+                      variantInfo = JSON.parse(item.variant);
+                    } catch (e) {
+                      console.error('Erreur lors du parsing du variant (string):', e);
+                    }
+                  } else if (typeof item.variant === 'object') {
+                    variantInfo = item.variant;
+                  }
+                }
+                
+                console.log(`Insertion produit: ID=${productId}, Quantité=${item.quantity}, Variant=`, variantInfo);
+                
+                await client.query(
+                  `INSERT INTO order_items 
+                  (order_id, product_id, quantity, variant_info) 
+                  VALUES ($1, $2, $3, $4)`,
+                  [newOrder.id, productId, item.quantity, variantInfo]
+                );
+                
+              } catch (itemError) {
+                console.error(`Erreur lors du traitement de l'item ${JSON.stringify(item)}:`, itemError);
               }
-              
-              await client.query(
-                `INSERT INTO order_items 
-                (order_id, product_id, quantity, variant_info) 
-                VALUES ($1, $2, $3, $4)`,
-                [newOrder.id, item.id, item.quantity, variant]
-              );
             }
           } catch (e) {
             console.error('Erreur lors de l\'ajout des items:', e);
@@ -732,19 +763,50 @@ async function handleCheckoutCompleted(event) {
           try {
             const itemsData = JSON.parse(session.metadata.items);
             for (const item of itemsData) {
-              let variant = {};
               try {
-                variant = item.variant ? JSON.parse(item.variant) : {};
-              } catch (e) {
-                console.error('Erreur de parsing du variant:', e);
+                console.log('Traitement de l\'item:', JSON.stringify(item));
+                
+                // Extraire correctement l'ID numérique du produit
+                let productId;
+                if (typeof item.id === 'string' && item.id.includes('-')) {
+                  // Format: "72-EU 42-Argent" -> extraire juste "72"
+                  productId = parseInt(item.id.split('-')[0], 10);
+                  console.log(`ID produit extrait: ${productId} depuis ${item.id}`);
+                } else {
+                  productId = parseInt(item.id, 10);
+                }
+                
+                if (isNaN(productId)) {
+                  console.error(`ID de produit invalide: ${item.id}, impossible de l'ajouter à la commande`);
+                  continue;
+                }
+
+                // Parser le variant
+                let variantInfo = {};
+                if (item.variant) {
+                  if (typeof item.variant === 'string') {
+                    try {
+                      variantInfo = JSON.parse(item.variant);
+                    } catch (e) {
+                      console.error('Erreur lors du parsing du variant (string):', e);
+                    }
+                  } else if (typeof item.variant === 'object') {
+                    variantInfo = item.variant;
+                  }
+                }
+                
+                console.log(`Insertion produit: ID=${productId}, Quantité=${item.quantity}, Variant=`, variantInfo);
+                
+                await client.query(
+                  `INSERT INTO order_items 
+                  (order_id, product_id, quantity, variant_info) 
+                  VALUES ($1, $2, $3, $4)`,
+                  [newOrder.id, productId, item.quantity, variantInfo]
+                );
+                
+              } catch (itemError) {
+                console.error(`Erreur lors du traitement de l'item ${JSON.stringify(item)}:`, itemError);
               }
-              
-              await client.query(
-                `INSERT INTO order_items 
-                (order_id, product_id, quantity, variant_info) 
-                VALUES ($1, $2, $3, $4)`,
-                [newOrder.id, item.id, item.quantity, variant]
-              );
             }
           } catch (e) {
             console.error('Erreur lors de l\'ajout des items:', e);
