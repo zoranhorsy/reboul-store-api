@@ -136,8 +136,8 @@ async function runTests() {
       // Appeler manuellement le handler de webhook (puisqu'on ne peut pas simuler une vraie requête webhook signée)
       try {
         const webhooksModule = require('../routes/stripewebhooks');
-        if (typeof webhooksModule.handleSuccessfulPayment === 'function') {
-          await webhooksModule.handleSuccessfulPayment(mockEvent);
+        if (typeof webhooksModule.handlers?.handleSuccessfulPayment === 'function') {
+          await webhooksModule.handlers.handleSuccessfulPayment(mockEvent);
           console.log('Handler de webhook appelé manuellement');
         } else {
           console.log('⚠️ Impossible d\'appeler le handler manuellement, simulation directe utilisée');

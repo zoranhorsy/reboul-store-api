@@ -792,8 +792,10 @@ router.post(
 );
 
 // Exposer les fonctions pour les tests
-module.exports = {
-  router,
+module.exports = router;
+
+// Export spécial pour les tests
+module.exports.handlers = {
   handleSuccessfulPayment,
   handleFailedPayment,
   handleCheckoutCompleted,
