@@ -595,7 +595,9 @@ async function handleCheckoutCompleted(event) {
     created: new Date().toISOString(),
     deliveryType: deliveryType,
     accountEmail: accountEmail, // Ajouter l'email du compte pour référence future
-    isAuthenticatedUser: isAuthenticatedUser
+    isAuthenticatedUser: isAuthenticatedUser,
+    stripe_email: session.customer_details?.email || session.customer_email, // Toujours stocker l'email utilisé dans Stripe
+    reboul_email: accountEmail || userEmail // Email associé au compte Reboul
   };
   
   console.log(`[DEBUG WEBHOOK] customer_info à stocker:`, JSON.stringify(customerInfo, null, 2));
