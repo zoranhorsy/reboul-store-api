@@ -581,5 +581,80 @@ router.get('/fix-missing-addresses', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * Route d'urgence pour corriger toutes les adresses manquantes avec des valeurs par défaut
+ * @route GET /api/orders/emergency-fix-addresses
+ * @access Private (admin only)
+ */
+router.get('/emergency-fix-addresses', authMiddleware, async (req, res) => {
+  if (!req.user.isAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: 'Accès non autorisé'
+    });
+  }
+  
+  const client = await pool.pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // Mise à jour de toutes les commandes pour standardiser le format d'adresse
+    const updateResult = await client.query(`
+      UPDATE orders
+      SET shipping_info = jsonb_set(
+        COALESCE(shipping_info, '{}'::jsonb),
+        '{hasAddress}',
+        'true'::jsonb
+      )
+    `);
+    
+    // Deuxième mise à jour pour ajouter d'autres champs nécessaires
+    await client.query(`
+      UPDATE orders
+      SET shipping_info = jsonb_set(
+        jsonb_set(
+          jsonb_set(
+            shipping_info, 
+            '{addressType}', 
+            '"shipping"'::jsonb
+          ),
+          '{isValid}',
+          'true'::jsonb
+        ),
+        '{address}',
+        COALESCE(shipping_info->'address', '"Non spécifiée"'::jsonb)
+      )
+      WHERE shipping_info->'address' IS NULL OR shipping_info->>'address' = 'null'
+    `);
+    
+    console.log('Correction d\'urgence des adresses terminée');
+    
+    // Compter les commandes corrigées
+    const countResult = await client.query(`
+      SELECT COUNT(*) FROM orders
+    `);
+    
+    const totalOrders = parseInt(countResult.rows[0].count);
+    
+    await client.query('COMMIT');
+    
+    res.json({
+      success: true,
+      message: `Correction d'urgence appliquée à ${totalOrders} commandes`,
+      totalOrders
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Erreur lors de la correction d\'urgence des adresses:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Erreur lors de la correction d\'urgence des adresses',
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;
 

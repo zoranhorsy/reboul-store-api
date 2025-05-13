@@ -479,12 +479,19 @@ async function handleCheckoutCompleted(event) {
   const orderNumber = session.metadata?.order_number;
   const userId = session.metadata?.user_id ? parseInt(session.metadata.user_id, 10) : null;
   const userEmail = session.metadata?.user_email || session.customer_details?.email;
+  const accountEmail = session.metadata?.account_email; // Email du compte authentifié
+  const isAuthenticatedUser = session.metadata?.is_authenticated_user === "true";
   const userName = session.metadata?.user_name || session.customer_details?.name;
   const shippingMethod = session.metadata?.shipping_method || 'standard';
   
   if (!orderNumber) {
     console.error('Aucun numéro de commande trouvé dans les métadonnées de la session:', session.id);
     return;
+  }
+  
+  console.log(`Traitement de la commande ${orderNumber} - Utilisateur connecté: ${isAuthenticatedUser ? 'OUI' : 'NON'}`);
+  if (isAuthenticatedUser) {
+    console.log(`Email du compte: ${accountEmail}, Email saisi dans Stripe: ${userEmail}`);
   }
   
   // Récupérer l'ID client Stripe s'il existe
@@ -520,6 +527,44 @@ async function handleCheckoutCompleted(event) {
     console.log(`Adresse: ${shippingAddress.line1}, ${shippingAddress.city}, ${shippingAddress.postal_code}`);
   }
   
+  // Rechercher l'utilisateur par email si pas d'ID utilisateur dans les métadonnées
+  let updatedUserId = userId;
+  if (!updatedUserId) {
+    // Essayer d'abord avec l'email du compte authentifié s'il existe
+    if (accountEmail) {
+      try {
+        const userQuery = await pool.query(
+          'SELECT id FROM users WHERE email = $1',
+          [accountEmail]
+        );
+        
+        if (userQuery.rows.length > 0) {
+          updatedUserId = userQuery.rows[0].id;
+          console.log(`Utilisateur trouvé par email du compte authentifié: ${accountEmail}, ID: ${updatedUserId}`);
+        }
+      } catch (emailLookupError) {
+        console.error(`Erreur lors de la recherche d'utilisateur par email du compte:`, emailLookupError);
+      }
+    }
+    
+    // Si toujours pas d'utilisateur trouvé, essayer avec l'email saisi dans Stripe
+    if (!updatedUserId && userEmail) {
+      try {
+        const userQuery = await pool.query(
+          'SELECT id FROM users WHERE email = $1',
+          [userEmail]
+        );
+        
+        if (userQuery.rows.length > 0) {
+          updatedUserId = userQuery.rows[0].id;
+          console.log(`Utilisateur trouvé par email Stripe: ${userEmail}, ID: ${updatedUserId}`);
+        }
+      } catch (emailLookupError) {
+        console.error(`Erreur lors de la recherche d'utilisateur par email Stripe:`, emailLookupError);
+      }
+    }
+  }
+  
   // Préparer les données du client Stripe à stocker
   const customerInfo = {
     email: userEmail || session.customer_details?.email,
@@ -527,7 +572,9 @@ async function handleCheckoutCompleted(event) {
     phone: session.customer_details?.phone,
     address: shippingAddress,
     created: new Date().toISOString(),
-    deliveryType: deliveryType
+    deliveryType: deliveryType,
+    accountEmail: accountEmail, // Ajouter l'email du compte pour référence future
+    isAuthenticatedUser: isAuthenticatedUser
   };
   
   // Préparer les données de paiement
@@ -558,24 +605,6 @@ async function handleCheckoutCompleted(event) {
     
     if (updateResult.success) {
       console.log(`Commande ${orderNumber} marquée comme payée avec succès`);
-      
-      // Rechercher l'utilisateur par email si pas d'ID utilisateur dans les métadonnées
-      let updatedUserId = userId;
-      if (!updatedUserId && userEmail) {
-        try {
-          const userQuery = await pool.query(
-            'SELECT id FROM users WHERE email = $1',
-            [userEmail]
-          );
-          
-          if (userQuery.rows.length > 0) {
-            updatedUserId = userQuery.rows[0].id;
-            console.log(`Utilisateur trouvé par email: ${userEmail}, ID: ${updatedUserId}`);
-          }
-        } catch (emailLookupError) {
-          console.error(`Erreur lors de la recherche d'utilisateur par email:`, emailLookupError);
-        }
-      }
       
       // Si la commande n'a pas d'ID utilisateur mais qu'on en a un maintenant, mettre à jour
       if (updatedUserId && !orderCheck.rows[0].user_id) {
