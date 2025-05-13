@@ -11,7 +11,7 @@ const paymentData = {
   paymentIntentId: 'pi_' + Math.random().toString(36).substring(2, 15),
   amount: 125.90,
   currency: 'eur',
-  customerEmail: 'test@example.com', // Remplacer par votre email pour les tests
+  customerEmail: 'zxransounds@gmail.com', // Remplacer par votre email pour les tests
   paymentStatus: 'paid',
   paymentMethod: 'card',
   paidAt: new Date().toISOString()
@@ -23,7 +23,7 @@ const orderData = {
   shipping_info: {
     firstName: 'Client',
     lastName: 'Test',
-    email: 'test@example.com', // Remplacer par votre email pour les tests
+    email: 'zxransounds@gmail.com', // Remplacer par votre email pour les tests
     address: '123 Rue de Test',
     city: 'Paris',
     postalCode: '75001',
