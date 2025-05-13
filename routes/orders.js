@@ -483,5 +483,103 @@ if (process.env.ENABLE_AUTO_ORDER_ASSOCIATION === 'true') {
   });
 }
 
+/**
+ * Route pour réparer les adresses manquantes dans les commandes
+ * @route GET /api/orders/fix-missing-addresses
+ * @access Private (admin only)
+ */
+router.get('/fix-missing-addresses', authMiddleware, async (req, res) => {
+  if (!req.user.isAdmin) {
+    return res.status(403).json({
+      success: false,
+      message: 'Accès non autorisé'
+    });
+  }
+  
+  const client = await pool.pool.connect();
+  try {
+    await client.query('BEGIN');
+    
+    // Récupérer toutes les commandes avec des adresses manquantes
+    const ordersWithMissingAddressQuery = await client.query(`
+      SELECT o.id, o.order_number, o.shipping_info, o.payment_data, o.customer_info
+      FROM orders o 
+      WHERE (
+        o.shipping_info IS NULL OR 
+        o.shipping_info->>'address' IS NULL OR 
+        o.shipping_info->>'hasAddress' = 'false' OR
+        o.shipping_info->>'isValid' = 'false'
+      )
+      ORDER BY o.created_at DESC
+    `);
+    
+    const ordersToFix = ordersWithMissingAddressQuery.rows;
+    console.log(`Trouvé ${ordersToFix.length} commandes avec des adresses manquantes à réparer`);
+    
+    let fixedCount = 0;
+    
+    for (const order of ordersToFix) {
+      // Récupérer les informations d'adresse de différentes sources
+      const stripeAddress = 
+        order.customer_info?.address || 
+        order.payment_data?.customerAddress || 
+        {};
+      
+      // Si nous avons une adresse valide dans les données Stripe
+      if (stripeAddress.line1 && stripeAddress.city && stripeAddress.postal_code) {
+        // Préparer les nouvelles informations d'expédition
+        let updatedShippingInfo = order.shipping_info || {};
+        
+        // Mettre à jour les informations d'adresse
+        updatedShippingInfo = {
+          ...updatedShippingInfo,
+          address: stripeAddress.line1,
+          addressLine2: stripeAddress.line2,
+          city: stripeAddress.city,
+          postalCode: stripeAddress.postal_code,
+          country: stripeAddress.country,
+          hasAddress: true,
+          addressType: 'shipping',
+          isValid: true,
+          // Conserver le type de livraison existant ou utiliser une valeur par défaut
+          deliveryType: updatedShippingInfo.deliveryType || 
+                        order.payment_data?.deliveryType || 
+                        'standard'
+        };
+        
+        console.log(`Mise à jour des informations d'adresse pour la commande ${order.order_number}:`, 
+                   JSON.stringify(updatedShippingInfo, null, 2));
+        
+        // Mettre à jour la commande avec les nouvelles informations d'expédition
+        await client.query(
+          'UPDATE orders SET shipping_info = $1 WHERE id = $2',
+          [updatedShippingInfo, order.id]
+        );
+        
+        fixedCount++;
+      }
+    }
+    
+    await client.query('COMMIT');
+    
+    res.json({
+      success: true,
+      message: `${fixedCount} commandes ont été réparées sur ${ordersToFix.length} commandes avec des adresses manquantes`,
+      totalOrders: ordersToFix.length,
+      fixedOrders: fixedCount
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Erreur lors de la réparation des adresses manquantes:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Erreur lors de la réparation des adresses manquantes',
+      error: error.message
+    });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;
 

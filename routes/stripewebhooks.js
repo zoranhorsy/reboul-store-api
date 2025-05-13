@@ -480,6 +480,7 @@ async function handleCheckoutCompleted(event) {
   const userId = session.metadata?.user_id ? parseInt(session.metadata.user_id, 10) : null;
   const userEmail = session.metadata?.user_email || session.customer_details?.email;
   const userName = session.metadata?.user_name || session.customer_details?.name;
+  const shippingMethod = session.metadata?.shipping_method || 'standard';
   
   if (!orderNumber) {
     console.error('Aucun numéro de commande trouvé dans les métadonnées de la session:', session.id);
@@ -489,13 +490,44 @@ async function handleCheckoutCompleted(event) {
   // Récupérer l'ID client Stripe s'il existe
   const stripeCustomerId = session.customer;
   
+  // Récupérer les informations d'expédition
+  const shippingDetails = session.shipping_details || {};
+  const shippingAddress = shippingDetails.address || {};
+  
+  // Déterminer le type de livraison à partir des métadonnées ou des options de livraison sélectionnées
+  let deliveryType = shippingMethod;
+  try {
+    if (session.shipping_rate) {
+      // Si le taux d'expédition est disponible, utiliser son nom d'affichage
+      if (session.shipping_rate.display_name) {
+        deliveryType = session.shipping_rate.display_name;
+      }
+    }
+  } catch (e) {
+    console.log("Impossible de déterminer le type de livraison à partir de shipping_rate:", e.message);
+  }
+  
+  console.log(`Type de livraison détecté: ${deliveryType}`);
+  
+  // Préparer les données d'adresse de livraison
+  const hasAddress = 
+    shippingAddress.line1 !== undefined && 
+    shippingAddress.city !== undefined && 
+    shippingAddress.postal_code !== undefined;
+    
+  console.log(`Adresse trouvée: ${hasAddress ? 'OUI' : 'NON'}`);
+  if (hasAddress) {
+    console.log(`Adresse: ${shippingAddress.line1}, ${shippingAddress.city}, ${shippingAddress.postal_code}`);
+  }
+  
   // Préparer les données du client Stripe à stocker
   const customerInfo = {
     email: userEmail || session.customer_details?.email,
     name: userName || session.customer_details?.name,
     phone: session.customer_details?.phone,
-    address: session.shipping_details?.address,
-    created: new Date().toISOString()
+    address: shippingAddress,
+    created: new Date().toISOString(),
+    deliveryType: deliveryType
   };
   
   // Préparer les données de paiement
@@ -508,6 +540,7 @@ async function handleCheckoutCompleted(event) {
     customerName: userName || session.customer_details?.name,
     paymentStatus: session.payment_status,
     paymentMethod: session.payment_method_types?.[0] || 'card',
+    deliveryType: deliveryType,
     paidAt: new Date().toISOString()
   };
   
@@ -583,12 +616,18 @@ async function handleCheckoutCompleted(event) {
               lastName: session.customer_details?.name?.split(' ').slice(1).join(' ') || orderDetails.shipping_info?.lastName || '',
               email: userEmail || session.customer_details?.email || orderDetails.shipping_info?.email,
               phone: session.customer_details?.phone || orderDetails.shipping_info?.phone,
-              address: session.shipping_details?.address?.line1 || orderDetails.shipping_info?.address,
-              addressLine2: session.shipping_details?.address?.line2 || orderDetails.shipping_info?.addressLine2,
-              city: session.shipping_details?.address?.city || orderDetails.shipping_info?.city,
-              postalCode: session.shipping_details?.address?.postal_code || orderDetails.shipping_info?.postalCode,
-              country: session.shipping_details?.address?.country || orderDetails.shipping_info?.country
+              address: shippingAddress.line1,
+              addressLine2: shippingAddress.line2,
+              city: shippingAddress.city,
+              postalCode: shippingAddress.postal_code,
+              country: shippingAddress.country,
+              hasAddress: hasAddress,
+              addressType: 'shipping',
+              isValid: hasAddress,
+              deliveryType: deliveryType
             };
+            
+            console.log(`Mise à jour des infos d'expédition: ${JSON.stringify(updatedShippingInfo, null, 2)}`);
             
             await pool.query(
               'UPDATE orders SET shipping_info = $1 WHERE order_number = $2',
@@ -659,21 +698,25 @@ async function handleCheckoutCompleted(event) {
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
       RETURNING *`,
       [
-        userId, // Utiliser l'ID utilisateur que nous avons trouvé
+        userId,
         session.amount_total / 100,
         {
           firstName: firstName,
           lastName: lastName,
           email: userEmail || session.customer_details?.email,
           phone: session.customer_details?.phone,
-          address: session.shipping_details?.address?.line1,
-          addressLine2: session.shipping_details?.address?.line2,
-          city: session.shipping_details?.address?.city,
-          postalCode: session.shipping_details?.address?.postal_code,
-          country: session.shipping_details?.address?.country
+          address: shippingAddress.line1,
+          addressLine2: shippingAddress.line2,
+          city: shippingAddress.city,
+          postalCode: shippingAddress.postal_code,
+          country: shippingAddress.country,
+          hasAddress: hasAddress,
+          addressType: 'shipping',
+          isValid: hasAddress,
+          deliveryType: deliveryType
         },
-        'processing', // statut de la commande
-        'paid', // statut du paiement
+        'processing',
+        'paid',
         orderNumber,
         paymentData, 
         session.id,
