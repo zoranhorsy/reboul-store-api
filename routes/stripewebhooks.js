@@ -484,6 +484,14 @@ async function handleCheckoutCompleted(event) {
   const userName = session.metadata?.user_name || session.customer_details?.name;
   const shippingMethod = session.metadata?.shipping_method || 'standard';
   
+  console.log(`[DEBUG WEBHOOK] Métadonnées de session complètes:`, session.metadata);
+  console.log(`[DEBUG WEBHOOK] Informations d'authentification:`, {
+    userId,
+    userEmail,
+    accountEmail,
+    isAuthenticatedUser
+  });
+  
   if (!orderNumber) {
     console.error('Aucun numéro de commande trouvé dans les métadonnées de la session:', session.id);
     return;
@@ -577,6 +585,8 @@ async function handleCheckoutCompleted(event) {
     isAuthenticatedUser: isAuthenticatedUser
   };
   
+  console.log(`[DEBUG WEBHOOK] customer_info à stocker:`, JSON.stringify(customerInfo, null, 2));
+  
   // Préparer les données de paiement
   const paymentData = {
     sessionId: session.id,
@@ -622,11 +632,25 @@ async function handleCheckoutCompleted(event) {
       // Mettre à jour les informations de client Stripe
       if (stripeCustomerId) {
         try {
+          console.log(`[DEBUG WEBHOOK] Mise à jour de stripe_customer_id et customer_info pour la commande ${orderNumber}`);
+          console.log(`[DEBUG WEBHOOK] SQL: UPDATE orders SET stripe_customer_id = '${stripeCustomerId}', customer_info = '${JSON.stringify(customerInfo)}' WHERE order_number = '${orderNumber}'`);
+          
           await pool.query(
             'UPDATE orders SET stripe_customer_id = $1, customer_info = $2 WHERE order_number = $3',
             [stripeCustomerId, customerInfo, orderNumber]
           );
           console.log(`ID client Stripe ${stripeCustomerId} ajouté à la commande ${orderNumber}`);
+          
+          // Vérifions ce qui a été réellement stocké
+          const orderAfterUpdate = await pool.query(
+            'SELECT customer_info FROM orders WHERE order_number = $1',
+            [orderNumber]
+          );
+          
+          if (orderAfterUpdate.rows.length > 0) {
+            console.log(`[DEBUG WEBHOOK] customer_info effectivement stocké:`, 
+              JSON.stringify(orderAfterUpdate.rows[0].customer_info, null, 2));
+          }
         } catch (customerIdError) {
           console.error(`Erreur lors de la mise à jour de l'ID client Stripe pour ${orderNumber}:`, customerIdError);
         }
