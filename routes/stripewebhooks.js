@@ -478,17 +478,30 @@ async function handleCheckoutCompleted(event) {
   // Extraire les métadonnées
   const orderNumber = session.metadata?.order_number;
   const userId = session.metadata?.user_id ? parseInt(session.metadata.user_id, 10) : null;
-  const userEmail = session.metadata?.user_email || session.customer_details?.email;
-  const accountEmail = session.metadata?.account_email; // Email du compte authentifié
+  
+  // Priorité à l'email du compte authentifié pour garantir l'association
+  const accountEmail = session.metadata?.account_email;
+  const customerProvidedEmail = session.customer_details?.email || session.customer_email;
+  let userEmail;
+  
+  if (accountEmail && accountEmail !== 'null' && accountEmail !== '') {
+    userEmail = accountEmail;  // Utiliser l'email du compte si disponible
+    console.log(`[DEBUG WEBHOOK] Utilisation de l'email du compte authentifié: ${accountEmail}`);
+  } else {
+    userEmail = customerProvidedEmail;
+    console.log(`[DEBUG WEBHOOK] Aucun email de compte, utilisation de l'email client: ${customerProvidedEmail}`);
+  }
+  
   const isAuthenticatedUser = session.metadata?.is_authenticated_user === "true";
   const userName = session.metadata?.user_name || session.customer_details?.name;
-  const shippingMethod = session.metadata?.shipping_method || 'standard';
+  const shippingMethod = session.metadata?.shipping_method;
   
-  console.log(`[DEBUG WEBHOOK] Métadonnées de session complètes:`, session.metadata);
-  console.log(`[DEBUG WEBHOOK] Informations d'authentification:`, {
+  console.log(`[DEBUG WEBHOOK] Informations de commande:`, {
+    orderNumber,
     userId,
-    userEmail,
     accountEmail,
+    customerProvidedEmail,
+    finalEmail: userEmail,
     isAuthenticatedUser
   });
   
