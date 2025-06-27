@@ -11,7 +11,7 @@ async function testUpload() {
     form.append('stock', '10');
     form.append('image_url', fs.createReadStream(path.join(__dirname, 'public', 'uploads', 'test-image.jpg')));
 
-    const response = await axios.post('http://localhost:5001/api/products', form, {
+    const response = await axios.post('https://reboul-store-api-production.up.railway.app/api/products', form, {
       headers: {
         ...form.getHeaders()
       }
