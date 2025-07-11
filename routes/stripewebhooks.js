@@ -173,6 +173,11 @@ async function updateOrderPaymentStatus(orderNumber, status, paymentData = {}) {
         'UPDATE orders SET status = $1 WHERE order_number = $2',
         ['processing', orderNumber]
       );
+    } else if (status === 'authorized') {
+      await client.query(
+        'UPDATE orders SET status = $1 WHERE order_number = $2',
+        ['pending', orderNumber]
+      );
     } else if (status === 'failed') {
       await client.query(
         'UPDATE orders SET status = $1 WHERE order_number = $2',
@@ -673,8 +678,8 @@ async function handleCheckoutCompleted(event) {
           isValid: hasAddress,
           deliveryType: deliveryType
         },
-        'processing',
-        'paid',
+        'pending',
+        'authorized',
         orderNumber,
         paymentData, 
         session.id,
