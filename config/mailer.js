@@ -250,7 +250,285 @@ const sendStripePaymentConfirmation = async (paymentData, orderData) => {
     }
 };
 
+/**
+ * Envoie un email de notification de changement de statut de commande
+ * @param {Object} order - Données de la commande
+ * @param {string} previousStatus - Ancien statut
+ * @param {string} newStatus - Nouveau statut
+ * @returns {Promise<Object>} - Résultat de l'envoi de l'email
+ */
+const sendOrderStatusNotification = async (order, previousStatus, newStatus) => {
+    if (process.env.NODE_ENV === 'test') {
+        return { messageId: 'test-message-id' };
+    }
+
+    try {
+        console.log(`Envoi de notification de changement de statut: ${previousStatus} -> ${newStatus} pour la commande:`, order.order_number);
+
+        if (!order.shipping_info || !order.shipping_info.email) {
+            throw new Error('Email du destinataire manquant dans shipping_info');
+        }
+
+        // Définir les templates selon le statut
+        const templates = {
+            processing: {
+                subject: `Votre commande #${order.order_number} est en cours de préparation`,
+                title: '🎯 Commande en cours de préparation',
+                message: 'Bonne nouvelle ! Votre commande est maintenant en cours de préparation dans nos entrepôts.',
+                details: 'Nos équipes sélectionnent et préparent vos articles avec le plus grand soin. Vous recevrez un email dès que votre commande sera expédiée.',
+                icon: '📦',
+                color: '#2196F3'
+            },
+            shipped: {
+                subject: `Votre commande #${order.order_number} a été expédiée`,
+                title: '🚚 Commande expédiée',
+                message: 'Votre commande a été expédiée ! Elle est maintenant en route vers vous.',
+                details: 'Vous devriez recevoir votre commande dans les prochains jours. Un numéro de suivi vous sera communiqué par email si disponible.',
+                icon: '🚚',
+                color: '#9C27B0'
+            },
+            delivered: {
+                subject: `Votre commande #${order.order_number} a été livrée`,
+                title: '✅ Commande livrée',
+                message: 'Parfait ! Votre commande a été livrée avec succès.',
+                details: 'Nous espérons que vous êtes satisfait de votre achat. N\'hésitez pas à nous faire part de vos commentaires !',
+                icon: '✅',
+                color: '#4CAF50'
+            },
+            cancelled: {
+                subject: `Votre commande #${order.order_number} a été annulée`,
+                title: '❌ Commande annulée',
+                message: 'Votre commande a été annulée.',
+                details: 'Si vous avez des questions concernant cette annulation, n\'hésitez pas à nous contacter. Nous restons à votre disposition.',
+                icon: '❌',
+                color: '#F44336'
+            }
+        };
+
+        const template = templates[newStatus];
+        if (!template) {
+            console.log(`Aucun template d'email défini pour le statut: ${newStatus}`);
+            return null;
+        }
+
+        // Date et heure formatées
+        const now = new Date();
+        const dateOptions = { year: 'numeric', month: 'long', day: 'numeric' };
+        const timeOptions = { hour: '2-digit', minute: '2-digit' };
+        const formattedDate = now.toLocaleDateString('fr-FR', dateOptions);
+        const formattedTime = now.toLocaleTimeString('fr-FR', timeOptions);
+
+        // Formater le montant total
+        const totalAmount = Number(order.total_amount);
+        const formattedAmount = isNaN(totalAmount) ? '0.00' : totalAmount.toFixed(2);
+
+        const mailOptions = {
+            from: `"Reboul Store" <${process.env.SMTP_USER}>`,
+            to: order.shipping_info.email,
+            subject: template.subject,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+                    <div style="text-align: center; margin-bottom: 30px;">
+                        <img src="https://reboulstore.com/images/logo_black.png" alt="Reboul Store Logo" style="max-width: 200px;">
+                    </div>
+                    
+                    <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h1 style="color: ${template.color}; text-align: center; margin-top: 0; font-size: 24px;">
+                            ${template.icon} ${template.title}
+                        </h1>
+                        
+                        <p style="font-size: 16px; line-height: 1.6;">
+                            Bonjour ${order.shipping_info.firstName},
+                        </p>
+                        
+                        <p style="font-size: 16px; line-height: 1.6;">
+                            ${template.message}
+                        </p>
+                        
+                        <div style="background-color: #f5f5f5; border-left: 4px solid ${template.color}; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                            <h2 style="margin-top: 0; color: #333; font-size: 18px;">Détails de votre commande</h2>
+                            <p style="margin: 5px 0;"><strong>Numéro de commande:</strong> ${order.order_number}</p>
+                            <p style="margin: 5px 0;"><strong>Montant total:</strong> ${formattedAmount} €</p>
+                            <p style="margin: 5px 0;"><strong>Date de mise à jour:</strong> ${formattedDate} à ${formattedTime}</p>
+                            ${order.tracking_number ? `<p style="margin: 5px 0;"><strong>Numéro de suivi:</strong> ${order.tracking_number}</p>` : ''}
+                        </div>
+                        
+                        <p style="font-size: 16px; line-height: 1.6;">
+                            ${template.details}
+                        </p>
+                        
+                        ${newStatus === 'delivered' ? `
+                            <div style="text-align: center; margin: 30px 0;">
+                                <a href="https://reboulstore.com/avis" style="display: inline-block; background-color: ${template.color}; color: white; text-decoration: none; padding: 12px 25px; border-radius: 4px; font-weight: bold;">
+                                    Laisser un avis
+                                </a>
+                            </div>
+                        ` : ''}
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="https://reboulstore.com/mon-compte/commandes" style="display: inline-block; background-color: #4a4a4a; color: white; text-decoration: none; padding: 12px 25px; border-radius: 4px; font-weight: bold;">
+                                Suivre ma commande
+                            </a>
+                        </div>
+                        
+                        <p style="font-size: 16px; line-height: 1.6;">
+                            Si vous avez des questions concernant votre commande, n'hésitez pas à nous contacter.
+                        </p>
+                        
+                        <p style="font-size: 16px; line-height: 1.6;">
+                            Merci de votre confiance !
+                        </p>
+                        
+                        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 0;">
+                            L'équipe Reboul Store
+                        </p>
+                    </div>
+                    
+                    <div style="text-align: center; margin-top: 30px; color: #666; font-size: 14px;">
+                        <p>© 2023 Reboul Store. Tous droits réservés.</p>
+                        <p>
+                            <a href="https://reboulstore.com/confidentialite" style="color: #666; text-decoration: underline;">Politique de confidentialité</a> | 
+                            <a href="https://reboulstore.com/conditions" style="color: #666; text-decoration: underline;">Conditions d'utilisation</a>
+                        </p>
+                    </div>
+                </div>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`Email de notification de statut ${newStatus} envoyé avec succès:`, {
+            messageId: info.messageId,
+            to: order.shipping_info.email,
+            status: newStatus
+        });
+        return info;
+    } catch (error) {
+        console.error(`Erreur lors de l'envoi de l'email de notification de statut ${newStatus}:`, {
+            name: error.name,
+            message: error.message,
+            code: error.code,
+            stack: error.stack
+        });
+        throw error;
+    }
+};
+
+/**
+ * Envoie un email avec numéro de suivi
+ * @param {Object} order - Données de la commande
+ * @param {string} trackingNumber - Numéro de suivi
+ * @param {string} carrier - Transporteur (optionnel)
+ * @returns {Promise<Object>} - Résultat de l'envoi de l'email
+ */
+const sendTrackingNotification = async (order, trackingNumber, carrier = null) => {
+    if (process.env.NODE_ENV === 'test') {
+        return { messageId: 'test-message-id' };
+    }
+
+    try {
+        console.log(`Envoi de notification de suivi pour la commande:`, order.order_number, 'avec le numéro:', trackingNumber);
+
+        if (!order.shipping_info || !order.shipping_info.email) {
+            throw new Error('Email du destinataire manquant dans shipping_info');
+        }
+
+        // Date et heure formatées
+        const now = new Date();
+        const dateOptions = { year: 'numeric', month: 'long', day: 'numeric' };
+        const timeOptions = { hour: '2-digit', minute: '2-digit' };
+        const formattedDate = now.toLocaleDateString('fr-FR', dateOptions);
+        const formattedTime = now.toLocaleTimeString('fr-FR', timeOptions);
+
+        // Formater le montant total
+        const totalAmount = Number(order.total_amount);
+        const formattedAmount = isNaN(totalAmount) ? '0.00' : totalAmount.toFixed(2);
+
+        const mailOptions = {
+            from: `"Reboul Store" <${process.env.SMTP_USER}>`,
+            to: order.shipping_info.email,
+            subject: `Numéro de suivi pour votre commande #${order.order_number}`,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f8f9fa;">
+                    <div style="text-align: center; margin-bottom: 30px;">
+                        <img src="https://reboulstore.com/images/logo_black.png" alt="Reboul Store Logo" style="max-width: 200px;">
+                    </div>
+                    
+                    <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <h1 style="color: #9C27B0; text-align: center; margin-top: 0; font-size: 24px;">
+                            📦 Numéro de suivi disponible
+                        </h1>
+                        
+                        <p style="font-size: 16px; line-height: 1.6;">
+                            Bonjour ${order.shipping_info.firstName},
+                        </p>
+                        
+                        <p style="font-size: 16px; line-height: 1.6;">
+                            Votre commande est maintenant en transit ! Voici votre numéro de suivi pour suivre l'acheminement de votre colis.
+                        </p>
+                        
+                        <div style="background-color: #f5f5f5; border-left: 4px solid #9C27B0; padding: 15px; margin: 20px 0; border-radius: 4px;">
+                            <h2 style="margin-top: 0; color: #333; font-size: 18px;">Informations de suivi</h2>
+                            <p style="margin: 5px 0;"><strong>Numéro de commande:</strong> ${order.order_number}</p>
+                            <p style="margin: 5px 0;"><strong>Numéro de suivi:</strong> <span style="font-family: monospace; background-color: #e9ecef; padding: 2px 6px; border-radius: 3px; font-size: 14px;">${trackingNumber}</span></p>
+                            ${carrier ? `<p style="margin: 5px 0;"><strong>Transporteur:</strong> ${carrier}</p>` : ''}
+                            <p style="margin: 5px 0;"><strong>Date d'expédition:</strong> ${formattedDate} à ${formattedTime}</p>
+                        </div>
+                        
+                        <p style="font-size: 16px; line-height: 1.6;">
+                            Vous pouvez utiliser ce numéro de suivi sur le site web du transporteur pour suivre l'acheminement de votre colis en temps réel.
+                        </p>
+                        
+                        <div style="text-align: center; margin: 30px 0;">
+                            <a href="https://reboulstore.com/mon-compte/commandes/${order.id}" style="display: inline-block; background-color: #9C27B0; color: white; text-decoration: none; padding: 12px 25px; border-radius: 4px; font-weight: bold;">
+                                Suivre ma commande
+                            </a>
+                        </div>
+                        
+                        <p style="font-size: 16px; line-height: 1.6;">
+                            Si vous avez des questions concernant votre livraison, n'hésitez pas à nous contacter.
+                        </p>
+                        
+                        <p style="font-size: 16px; line-height: 1.6;">
+                            Merci de votre confiance !
+                        </p>
+                        
+                        <p style="font-size: 16px; line-height: 1.6; margin-bottom: 0;">
+                            L'équipe Reboul Store
+                        </p>
+                    </div>
+                    
+                    <div style="text-align: center; margin-top: 30px; color: #666; font-size: 14px;">
+                        <p>© 2023 Reboul Store. Tous droits réservés.</p>
+                        <p>
+                            <a href="https://reboulstore.com/confidentialite" style="color: #666; text-decoration: underline;">Politique de confidentialité</a> | 
+                            <a href="https://reboulstore.com/conditions" style="color: #666; text-decoration: underline;">Conditions d'utilisation</a>
+                        </p>
+                    </div>
+                </div>
+            `
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Email de notification de suivi envoyé avec succès:', {
+            messageId: info.messageId,
+            to: order.shipping_info.email,
+            trackingNumber: trackingNumber
+        });
+        return info;
+    } catch (error) {
+        console.error('Erreur lors de l\'envoi de l\'email de notification de suivi:', {
+            name: error.name,
+            message: error.message,
+            code: error.code,
+            stack: error.stack
+        });
+        throw error;
+    }
+};
+
 module.exports = {
     sendOrderConfirmation,
-    sendStripePaymentConfirmation
+    sendStripePaymentConfirmation,
+    sendOrderStatusNotification,
+    sendTrackingNotification
 }; 
