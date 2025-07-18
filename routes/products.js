@@ -5,6 +5,7 @@ const { AppError } = require("../middleware/errorHandler")
 const authMiddleware = require("../middleware/auth")
 const uploadFields = require("../middleware/upload")
 const { ProductController } = require("../controllers/productController")
+const { ReboulProductController } = require("../controllers/reboulProductController")
 const db = require('../db')
 
 // Middleware de validation
@@ -43,7 +44,7 @@ router.get(
     console.log('Type de brand_id:', typeof req.query.brand_id, 'Valeur:', req.query.brand_id)
     
     try {
-      const result = await ProductController.getAllProducts(req, res, next)
+      const result = await ReboulProductController.getAllReboulProducts(req, res, next)
       console.log('Résultat de la requête:', { 
         total: result.pagination.totalItems,
         page: result.pagination.currentPage
@@ -71,7 +72,7 @@ router.get(
   validateRequest,
   async (req, res, next) => {
     try {
-      const product = await ProductController.getProductById(req.params.id)
+      const product = await ReboulProductController.getReboulProductById(req.params.id)
       res.json(product)
     } catch (err) {
       next(err)

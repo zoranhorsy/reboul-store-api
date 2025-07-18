@@ -198,6 +198,7 @@ const authRouter = require('./routes/auth');
 const addressesRouter = require('./routes/addresses');
 const reviewsRouter = require('./routes/reviews');
 const statsRouter = require('./routes/stats');
+const reboulStatsRouter = require('./routes/reboulStats');
 const archivesRouter = require('./routes/archives');
 const checkoutRouter = require('./routes/checkout');
 
@@ -215,6 +216,7 @@ app.use('/api/reviews', reviewsRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/stats', statsRouter);
+app.use('/api/reboul', reboulStatsRouter);
 app.use('/api/archives', archivesRouter);
 app.use('/api/checkout', checkoutRouter);
 
