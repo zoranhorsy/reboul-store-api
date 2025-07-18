@@ -147,19 +147,31 @@ class ReboulProductController {
       
       query = `
         SELECT * FROM (
-          SELECT *, store_type, 'products' as source_table 
+          SELECT 
+            id, name, description, price, category_id, brand_id, brand,
+            image_url, images, variants, tags, details, featured, active, new,
+            sku, store_reference, material, weight, dimensions, rating, reviews_count,
+            created_at, updated_at, _actiontype, store_type, 'products' as source_table
           FROM products 
           WHERE store_type = 'adult' ${commonConditions.length > 0 ? " AND " + commonConditions.join(" AND ") : ""}
           
           UNION ALL
           
-          SELECT *, 'sneakers' as store_type, 'sneakers_products' as source_table 
+          SELECT 
+            id, name, description, price, category_id, brand_id, brand,
+            image_url, images, variants, tags, details, featured, active, new,
+            sku, store_reference, material, weight, dimensions, rating, reviews_count,
+            created_at, updated_at, _actiontype, 'sneakers' as store_type, 'sneakers_products' as source_table
           FROM sneakers_products 
           ${whereClause}
           
           UNION ALL
           
-          SELECT *, 'kids' as store_type, 'minots_products' as source_table 
+          SELECT 
+            id, name, description, price, category_id, brand_id, brand,
+            image_url, images, variants, tags, details, featured, active, new,
+            sku, store_reference, material, weight, dimensions, rating, reviews_count,
+            created_at, updated_at, _actiontype, 'kids' as store_type, 'minots_products' as source_table
           FROM minots_products 
           ${whereClause}
         ) AS combined_products
