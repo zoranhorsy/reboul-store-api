@@ -141,53 +141,11 @@ class ReboulProductController {
         ${whereClause}
       `
       
-    } else {
-      // Pas de store_type spécifique → UNION des 3 tables
-      const whereClause = commonConditions.length > 0 ? " WHERE " + commonConditions.join(" AND ") : ""
-      
-      query = `
-        SELECT * FROM (
-          SELECT 
-            id, name, description, price, category_id, brand_id, brand,
-            image_url, images, variants, tags, details, featured, active, new,
-            sku, store_reference, material, weight, dimensions, rating, reviews_count,
-            created_at, updated_at, _actiontype, store_type, 'products' as source_table
-          FROM products 
-          WHERE store_type = 'adult' ${commonConditions.length > 0 ? " AND " + commonConditions.join(" AND ") : ""}
-          
-          UNION ALL
-          
-          SELECT 
-            id, name, description, price, category_id, brand_id, brand,
-            image_url, images, variants, tags, details, featured, active, new,
-            sku, store_reference, material, weight, dimensions, rating, reviews_count,
-            created_at, updated_at, _actiontype, 'sneakers' as store_type, 'sneakers_products' as source_table
-          FROM sneakers_products 
-          ${whereClause}
-          
-          UNION ALL
-          
-          SELECT 
-            id, name, description, price, category_id, brand_id, brand,
-            image_url, images, variants, tags, details, featured, active, new,
-            sku, store_reference, material, weight, dimensions, rating, reviews_count,
-            created_at, updated_at, _actiontype, 'kids' as store_type, 'minots_products' as source_table
-          FROM minots_products 
-          ${whereClause}
-        ) AS combined_products
-        ORDER BY ${sortColumn} ${sortOrder} 
-        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-      `
-      
-      countQuery = `
-        SELECT COUNT(*) FROM (
-          SELECT id FROM products WHERE store_type = 'adult' ${commonConditions.length > 0 ? " AND " + commonConditions.join(" AND ") : ""}
-          UNION ALL
-          SELECT id FROM sneakers_products ${whereClause}
-          UNION ALL
-          SELECT id FROM minots_products ${whereClause}
-        ) AS combined_count
-      `
+    }
+
+    // Cas spécial : pas de store_type spécifique, traitement à part
+    if (!storeType) {
+      return await this.getAllReboulProductsCombined(commonConditions, queryParams, page, limit, sortColumn, sortOrder)
     }
 
     console.log("Query:", query)
@@ -211,6 +169,92 @@ class ReboulProductController {
     } catch (error) {
       console.error("Erreur lors de la récupération des produits Reboul:", error)
       throw new AppError("Erreur lors de la récupération des produits", 500)
+    }
+  }
+
+  // Méthode pour récupérer tous les produits Reboul (combiné)
+  static async getAllReboulProductsCombined(commonConditions, queryParams, page, limit, sortColumn, sortOrder) {
+    const offset = (page - 1) * limit
+    
+    try {
+      const whereClause = commonConditions.length > 0 ? " WHERE " + commonConditions.join(" AND ") : ""
+      
+      // Récupérer les données de chaque table séparément
+      const adultQuery = `
+        SELECT *, store_type, 'products' as source_table 
+        FROM products 
+        WHERE store_type = 'adult' ${commonConditions.length > 0 ? " AND " + commonConditions.join(" AND ") : ""}
+        ORDER BY ${sortColumn} ${sortOrder}
+      `
+      
+      const sneakersQuery = `
+        SELECT *, 'sneakers' as store_type, 'sneakers_products' as source_table 
+        FROM sneakers_products 
+        ${whereClause}
+        ORDER BY ${sortColumn} ${sortOrder}
+      `
+      
+      const minotsQuery = `
+        SELECT *, 'kids' as store_type, 'minots_products' as source_table 
+        FROM minots_products 
+        ${whereClause}
+        ORDER BY ${sortColumn} ${sortOrder}
+      `
+      
+      console.log("Requêtes combinées:", { adultQuery, sneakersQuery, minotsQuery })
+      console.log("Params:", queryParams)
+      
+      // Exécuter les 3 requêtes en parallèle
+      const [adultResult, sneakersResult, minotsResult] = await Promise.all([
+        pool.query(adultQuery, queryParams),
+        pool.query(sneakersQuery, queryParams),
+        pool.query(minotsQuery, queryParams)
+      ])
+      
+      // Combiner les résultats
+      const allRows = [
+        ...adultResult.rows,
+        ...sneakersResult.rows,
+        ...minotsResult.rows
+      ]
+      
+      console.log("Résultats combinés:", {
+        adult: adultResult.rows.length,
+        sneakers: sneakersResult.rows.length,
+        minots: minotsResult.rows.length,
+        total: allRows.length
+      })
+      
+      // Trier les résultats combinés
+      allRows.sort((a, b) => {
+        if (sortColumn === "price::numeric") {
+          return sortOrder === "ASC" ? 
+            parseFloat(a.price) - parseFloat(b.price) : 
+            parseFloat(b.price) - parseFloat(a.price)
+        } else {
+          return sortOrder === "ASC" ? 
+            a.name.localeCompare(b.name) : 
+            b.name.localeCompare(a.name)
+        }
+      })
+      
+      // Appliquer la pagination
+      const startIndex = offset
+      const endIndex = offset + limit
+      const paginatedRows = allRows.slice(startIndex, endIndex)
+      
+      return {
+        data: paginatedRows,
+        pagination: {
+          currentPage: page,
+          pageSize: limit,
+          totalItems: allRows.length,
+          totalPages: Math.ceil(allRows.length / limit),
+        },
+      }
+    } catch (error) {
+      console.error("Erreur lors de la récupération combinée:", error)
+      throw new AppError("Erreur lors de la récupération des produits combinés", 500)
     }
   }
 
