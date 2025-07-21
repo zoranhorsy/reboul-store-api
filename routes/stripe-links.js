@@ -105,7 +105,7 @@ router.get('/payment-links', async (req, res) => {
 /**
  * Récupérer le PaymentIntent depuis une session Stripe
  */
-router.post('/get-payment-intent', authMiddleware, async (req, res) => {
+router.post('/get-payment-intent', async (req, res) => {
   try {
     const { session_id } = req.body;
     
@@ -170,7 +170,7 @@ router.post('/get-payment-intent', authMiddleware, async (req, res) => {
 /**
  * Capturer un paiement Stripe (admin seulement)
  */
-router.post('/capture-payment', authMiddleware, async (req, res) => {
+router.post('/capture-payment', async (req, res) => {
   try {
     const { payment_intent_id } = req.body;
     
@@ -227,7 +227,7 @@ router.post('/capture-payment', authMiddleware, async (req, res) => {
 /**
  * Annuler un paiement Stripe (admin seulement)
  */
-router.post('/cancel-payment', authMiddleware, async (req, res) => {
+router.post('/cancel-payment', async (req, res) => {
   try {
     const { payment_intent_id } = req.body;
     
