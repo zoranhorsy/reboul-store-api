@@ -896,5 +896,249 @@ router.post('/send-email',
         }
     });
 
+// PATCH pour initier un retour produit (client)
+router.patch('/:orderId/return',
+    authMiddleware,
+    [
+        param('orderId').isInt({ min: 1 }).withMessage('L\'ID de la commande doit être un nombre entier positif'),
+        body('items').isArray({ min: 1 }).withMessage('La liste des items à retourner est requise'),
+        body('items.*.order_item_id').isInt({ min: 1 }).withMessage('L\'ID de l\'item est requis'),
+        body('items.*.quantity').isInt({ min: 1 }).withMessage('La quantité retournée doit être un entier positif'),
+        body('items.*.reason').isString().withMessage('La raison du retour est requise')
+    ],
+    validate([
+        param('orderId'),
+        body('items'),
+        body('items.*.order_item_id'),
+        body('items.*.quantity'),
+        body('items.*.reason')
+    ]),
+    async (req, res, next) => {
+        const userId = req.user.id;
+        const { orderId } = req.params;
+        const { items } = req.body;
+        let client;
+        try {
+            client = await pool.pool.connect();
+            await client.query('BEGIN');
+
+            // 1. Vérifier que la commande appartient à l'utilisateur
+            const orderRes = await client.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+            if (orderRes.rows.length === 0) {
+                throw new AppError('Commande non trouvée', 404);
+            }
+            const order = orderRes.rows[0];
+            if (!req.user.isAdmin && order.user_id !== userId) {
+                throw new AppError('Accès non autorisé', 403);
+            }
+            if (order.status !== 'delivered') {
+                throw new AppError('Seules les commandes livrées peuvent faire l\'objet d\'un retour', 400);
+            }
+
+            // 2. Vérifier chaque item
+            for (const item of items) {
+                const itemRes = await client.query('SELECT * FROM order_items WHERE id = $1 AND order_id = $2', [item.order_item_id, orderId]);
+                if (itemRes.rows.length === 0) {
+                    throw new AppError(`L'item ${item.order_item_id} n'existe pas dans cette commande`, 404);
+                }
+                const orderItem = itemRes.rows[0];
+                if (orderItem.return_status && orderItem.return_status !== 'none') {
+                    throw new AppError(`Un retour est déjà en cours ou traité pour l'item ${item.order_item_id}`, 400);
+                }
+                if (item.quantity > orderItem.quantity) {
+                    throw new AppError(`La quantité retournée (${item.quantity}) dépasse la quantité achetée (${orderItem.quantity}) pour l'item ${item.order_item_id}`, 400);
+                }
+            }
+
+            // 3. Mettre à jour les items
+            for (const item of items) {
+                await client.query(
+                    'UPDATE order_items SET return_status = $1, return_quantity = $2, return_reason = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4',
+                    ['requested', item.quantity, item.reason, item.order_item_id]
+                );
+            }
+
+            await client.query('COMMIT');
+
+            // 4. Envoyer un email de notification (optionnel)
+            try {
+                await sendOrderStatusNotification(order, order.status, 'return_requested');
+            } catch (emailErr) {
+                console.error('Erreur lors de l\'envoi de l\'email de retour :', emailErr);
+            }
+
+            res.status(200).json({ message: 'Demande de retour enregistrée. Un administrateur va la traiter.' });
+        } catch (err) {
+            if (client) await client.query('ROLLBACK');
+            next(err);
+        } finally {
+            if (client) client.release();
+        }
+    }
+);
+
+// PATCH pour valider ou refuser un retour produit (admin)
+router.patch('/:orderId/return/validate',
+    authMiddleware,
+    [
+        param('orderId').isInt({ min: 1 }).withMessage('L\'ID de la commande doit être un nombre entier positif'),
+        body('items').isArray({ min: 1 }).withMessage('La liste des items à traiter est requise'),
+        body('items.*.order_item_id').isInt({ min: 1 }).withMessage('L\'ID de l\'item est requis'),
+        body('items.*.approved').isBoolean().withMessage('Le champ approved (true/false) est requis'),
+        body('items.*.admin_comment').optional().isString()
+    ],
+    validate([
+        param('orderId'),
+        body('items'),
+        body('items.*.order_item_id'),
+        body('items.*.approved'),
+        body('items.*.admin_comment')
+    ]),
+    async (req, res, next) => {
+        if (!req.user.isAdmin) {
+            return next(new AppError('Accès non autorisé', 403));
+        }
+        const { orderId } = req.params;
+        const { items } = req.body;
+        let client;
+        try {
+            client = await pool.pool.connect();
+            await client.query('BEGIN');
+
+            // 1. Vérifier que la commande existe
+            const orderRes = await client.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+            if (orderRes.rows.length === 0) {
+                throw new AppError('Commande non trouvée', 404);
+            }
+            const order = orderRes.rows[0];
+            if (order.status !== 'delivered') {
+                throw new AppError('Seules les commandes livrées peuvent faire l\'objet d\'un retour', 400);
+            }
+
+            // 2. Vérifier chaque item et préparer les updates
+            for (const item of items) {
+                const itemRes = await client.query('SELECT * FROM order_items WHERE id = $1 AND order_id = $2', [item.order_item_id, orderId]);
+                if (itemRes.rows.length === 0) {
+                    throw new AppError(`L'item ${item.order_item_id} n'existe pas dans cette commande`, 404);
+                }
+                const orderItem = itemRes.rows[0];
+                if (orderItem.return_status !== 'requested') {
+                    throw new AppError(`Aucun retour en attente pour l'item ${item.order_item_id}`, 400);
+                }
+                if (orderItem.return_quantity > orderItem.quantity) {
+                    throw new AppError(`La quantité retournée (${orderItem.return_quantity}) dépasse la quantité achetée (${orderItem.quantity}) pour l'item ${item.order_item_id}`, 400);
+                }
+
+                // Si validé, ré-incrémenter le stock du variant (si applicable)
+                if (item.approved) {
+                    // On suppose que le variant est dans variant_info (jsonb)
+                    if (orderItem.product_id) {
+                        // Récupérer les variants du produit
+                        const prodRes = await client.query('SELECT variants FROM products WHERE id = $1 FOR UPDATE', [orderItem.product_id]);
+                        if (prodRes.rows.length > 0) {
+                            let variants = prodRes.rows[0].variants;
+                            if (typeof variants === 'string') variants = JSON.parse(variants);
+                            const variant = variants.find(v =>
+                                String(v.size) === String(orderItem.variant_info.size) &&
+                                String(v.color).toLowerCase() === String(orderItem.variant_info.color).toLowerCase()
+                            );
+                            if (variant) {
+                                variant.stock += orderItem.return_quantity;
+                                await client.query('UPDATE products SET variants = $1 WHERE id = $2', [JSON.stringify(variants), orderItem.product_id]);
+                            }
+                        }
+                    }
+                }
+
+                // Mettre à jour le statut de retour et le commentaire admin
+                await client.query(
+                    'UPDATE order_items SET return_status = $1, updated_at = CURRENT_TIMESTAMP, return_reason = return_reason, admin_comment = $2 WHERE id = $3',
+                    [item.approved ? 'approved' : 'rejected', item.admin_comment || null, item.order_item_id]
+                );
+            }
+
+            await client.query('COMMIT');
+
+            // Envoyer un email de notification au client
+            try {
+                await sendOrderStatusNotification(order, order.status, 'return_' + (items[0].approved ? 'approved' : 'rejected'));
+            } catch (emailErr) {
+                console.error('Erreur lors de l\'envoi de l\'email de validation/refus de retour :', emailErr);
+            }
+
+            res.status(200).json({ message: 'Retour(s) traité(s) avec succès.' });
+        } catch (err) {
+            if (client) await client.query('ROLLBACK');
+            next(err);
+        } finally {
+            if (client) client.release();
+        }
+    }
+);
+
+// PATCH pour marquer une commande comme remboursée manuellement (admin)
+router.patch('/:orderId/mark-refunded',
+    authMiddleware,
+    [
+        param('orderId').isInt({ min: 1 }).withMessage('L\'ID de la commande doit être un nombre entier positif'),
+        body('refund_id').optional().isString().withMessage('refund_id doit être une chaîne'),
+        body('admin_comment').optional().isString()
+    ],
+    validate([
+        param('orderId'),
+        body('refund_id'),
+        body('admin_comment')
+    ]),
+    async (req, res, next) => {
+        if (!req.user.isAdmin) {
+            return next(new AppError('Accès non autorisé', 403));
+        }
+        const { orderId } = req.params;
+        const { refund_id, admin_comment } = req.body;
+        let client;
+        try {
+            client = await pool.pool.connect();
+            await client.query('BEGIN');
+
+            // 1. Vérifier que la commande existe
+            const orderRes = await client.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+            if (orderRes.rows.length === 0) {
+                throw new AppError('Commande non trouvée', 404);
+            }
+            const order = orderRes.rows[0];
+
+            // 2. Mettre à jour la commande
+            await client.query(
+                'UPDATE orders SET refund_id = $1, payment_status = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $3',
+                [refund_id || null, 'refunded', orderId]
+            );
+
+            // 3. (Optionnel) Ajouter un commentaire admin sur tous les items retournés
+            if (admin_comment) {
+                await client.query(
+                    "UPDATE order_items SET admin_comment = $1 WHERE order_id = $2 AND return_status = 'approved'",
+                    [admin_comment, orderId]
+                );
+            }
+
+            await client.query('COMMIT');
+
+            // 4. Envoyer un email de notification au client
+            try {
+                await sendOrderStatusNotification(order, order.payment_status, 'refunded');
+            } catch (emailErr) {
+                console.error('Erreur lors de l\'envoi de l\'email de remboursement :', emailErr);
+            }
+
+            res.status(200).json({ message: 'Commande marquée comme remboursée.' });
+        } catch (err) {
+            if (client) await client.query('ROLLBACK');
+            next(err);
+        } finally {
+            if (client) client.release();
+        }
+    }
+);
+
 module.exports = router;
 
