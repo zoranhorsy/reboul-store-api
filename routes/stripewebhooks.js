@@ -793,10 +793,10 @@ async function handleCheckoutCompleted(event) {
             // 4. Chercher enfin dans products (adult) si pas trouvé
             if (!product) {
               try {
-                const productResult = await client.query(
-                  'SELECT name, price FROM products WHERE id = $1',
-                  [productId]
-                );
+            const productResult = await client.query(
+              'SELECT name, price FROM products WHERE id = $1',
+              [productId]
+            );
                 if (productResult.rows.length > 0) {
                   product = productResult.rows[0];
                   storeTable = 'products';
@@ -844,7 +844,7 @@ async function handleCheckoutCompleted(event) {
               case 'products':
               default:
                 insertQuery = `INSERT INTO order_items 
-                  (order_id, product_id, product_name, quantity, price, variant_info) 
+              (order_id, product_id, product_name, quantity, price, variant_info) 
                   VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`;
                 insertParams = [newOrder.id, productId, product.name, item.quantity, product.price, variantInfo];
                 break;
