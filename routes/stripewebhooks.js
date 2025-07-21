@@ -736,20 +736,83 @@ async function handleCheckoutCompleted(event) {
               }
             }
             
-            // Récupérer les informations du produit (notamment le nom)
-            console.log(`Recherche du produit ${productId} dans la base de données...`);
-            const productResult = await client.query(
-              'SELECT name, price FROM products WHERE id = $1',
-              [productId]
-            );
+            // Récupérer les informations du produit depuis toutes les tables stores
+            console.log(`Recherche du produit ${productId} dans toutes les tables...`);
+            let product = null;
+            let storeTable = null;
             
-            if (productResult.rows.length === 0) {
-              console.error(`❌ Produit non trouvé dans la base de données: ${productId}`);
+            // 1. Chercher d'abord dans corner_products (The Corner)
+            try {
+              const cornerResult = await client.query(
+                'SELECT name, price FROM corner_products WHERE id = $1',
+                [productId]
+              );
+              if (cornerResult.rows.length > 0) {
+                product = cornerResult.rows[0];
+                storeTable = 'corner_products';
+                console.log(`✅ Produit trouvé dans corner_products: ${product.name}`);
+              }
+            } catch (e) {
+              console.warn(`Erreur recherche corner_products:`, e.message);
+            }
+            
+            // 2. Chercher dans sneakers_products si pas trouvé
+            if (!product) {
+              try {
+                const sneakersResult = await client.query(
+                  'SELECT name, price FROM sneakers_products WHERE id = $1',
+                  [productId]
+                );
+                if (sneakersResult.rows.length > 0) {
+                  product = sneakersResult.rows[0];
+                  storeTable = 'sneakers_products';
+                  console.log(`✅ Produit trouvé dans sneakers_products: ${product.name}`);
+                }
+              } catch (e) {
+                console.warn(`Erreur recherche sneakers_products:`, e.message);
+              }
+            }
+            
+            // 3. Chercher dans minots_products (kids) si pas trouvé
+            if (!product) {
+              try {
+                const minotsResult = await client.query(
+                  'SELECT name, price FROM minots_products WHERE id = $1',
+                  [productId]
+                );
+                if (minotsResult.rows.length > 0) {
+                  product = minotsResult.rows[0];
+                  storeTable = 'minots_products';
+                  console.log(`✅ Produit trouvé dans minots_products: ${product.name}`);
+                }
+              } catch (e) {
+                console.warn(`Erreur recherche minots_products:`, e.message);
+              }
+            }
+            
+            // 4. Chercher enfin dans products (adult) si pas trouvé
+            if (!product) {
+              try {
+                const productResult = await client.query(
+                  'SELECT name, price FROM products WHERE id = $1',
+                  [productId]
+                );
+                if (productResult.rows.length > 0) {
+                  product = productResult.rows[0];
+                  storeTable = 'products';
+                  console.log(`✅ Produit trouvé dans products: ${product.name}`);
+                }
+              } catch (e) {
+                console.warn(`Erreur recherche products:`, e.message);
+              }
+            }
+            
+            if (!product) {
+              console.error(`❌ Produit ${productId} non trouvé dans aucune table (products, sneakers_products, corner_products, minots_products)`);
               continue;
             }
             
-            const product = productResult.rows[0];
-            console.log(`✅ Produit trouvé: ${product.name} (${productId}), prix: ${product.price}`);
+            console.log(`✅ Produit ${productId} trouvé dans ${storeTable}: ${product.name}, prix: ${product.price}`);
             
             console.log(`Insertion produit dans order_items: ID=${productId}, Nom=${product.name}, Quantité=${item.quantity}, Variant=`, variantInfo);
             

@@ -41,6 +41,9 @@ class ReboulProductController {
     // Construction des conditions communes (sans store_type)
     const commonConditions = []
     
+    // Toujours filtrer sur les produits actifs
+    commonConditions.push(`active = true`)
+    
     if (req.query.category_id) {
       commonConditions.push(`category_id = $${paramIndex}`)
       queryParams.push(Number.parseInt(req.query.category_id))
