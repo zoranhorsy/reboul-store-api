@@ -178,6 +178,187 @@ router.post(
   }
 )
 
+// POST pour mettre à jour le stock après validation d'une commande
+router.post(
+  "/update-stock",
+  authMiddleware,
+  [
+    body("items").isArray().withMessage("Items doit être un tableau"),
+    body("items.*.product_id").notEmpty().withMessage("product_id est requis pour chaque item"),
+    body("items.*.quantity").isInt({ min: 1 }).withMessage("quantity doit être un nombre entier positif"),
+    body("order_id").isInt().withMessage("order_id doit être un nombre entier")
+  ],
+  validateRequest,
+  async (req, res, next) => {
+    const client = await db.pool.connect();
+    try {
+      const { items, order_id } = req.body;
+      console.log(`📦 Mise à jour du stock pour la commande #${order_id}`, items);
+      
+      await client.query('BEGIN');
+      
+      const results = {
+        success: [],
+        errors: [],
+        summary: { updated: 0, failed: 0 }
+      };
+      
+      for (const item of items) {
+        try {
+          const productId = parseInt(item.product_id);
+          const quantity = parseInt(item.quantity);
+          const variantInfo = item.variant_info || {};
+          
+          console.log(`🔍 Traitement produit ID: ${productId}, quantité: ${quantity}`);
+          
+          // Déterminer dans quelle table chercher le produit
+          let table = null;
+          let product = null;
+          
+          // 1. Chercher dans corner_products
+          try {
+            const cornerResult = await client.query('SELECT * FROM corner_products WHERE id = $1', [productId]);
+            if (cornerResult.rows.length > 0) {
+              table = 'corner_products';
+              product = cornerResult.rows[0];
+            }
+          } catch (e) {
+            console.warn(`Erreur recherche corner_products:`, e.message);
+          }
+          
+          // 2. Chercher dans sneakers_products
+          if (!product) {
+            try {
+              const sneakersResult = await client.query('SELECT * FROM sneakers_products WHERE id = $1', [productId]);
+              if (sneakersResult.rows.length > 0) {
+                table = 'sneakers_products';
+                product = sneakersResult.rows[0];
+              }
+            } catch (e) {
+              console.warn(`Erreur recherche sneakers_products:`, e.message);
+            }
+          }
+          
+          // 3. Chercher dans minots_products
+          if (!product) {
+            try {
+              const minotsResult = await client.query('SELECT * FROM minots_products WHERE id = $1', [productId]);
+              if (minotsResult.rows.length > 0) {
+                table = 'minots_products';
+                product = minotsResult.rows[0];
+              }
+            } catch (e) {
+              console.warn(`Erreur recherche minots_products:`, e.message);
+            }
+          }
+          
+          // 4. Chercher dans products (adult)
+          if (!product) {
+            try {
+              const productsResult = await client.query('SELECT * FROM products WHERE id = $1', [productId]);
+              if (productsResult.rows.length > 0) {
+                table = 'products';
+                product = productsResult.rows[0];
+              }
+            } catch (e) {
+              console.warn(`Erreur recherche products:`, e.message);
+            }
+          }
+          
+          if (!product) {
+            console.error(`❌ Produit ${productId} non trouvé dans aucune table`);
+            results.errors.push({ 
+              product_id: productId, 
+              error: `Produit non trouvé dans aucune table` 
+            });
+            results.summary.failed++;
+            continue;
+          }
+          
+          console.log(`✅ Produit trouvé dans ${table}: ${product.name}`);
+          
+          // Mettre à jour les variants si le produit en a
+          if (product.variants && typeof product.variants === 'object') {
+            const variants = Array.isArray(product.variants) ? product.variants : Object.values(product.variants);
+            let variantUpdated = false;
+            
+            // Chercher le variant correspondant
+            for (let variant of variants) {
+              if (
+                variant.size === variantInfo.size && 
+                (variant.color === variantInfo.color || variant.colorLabel === variantInfo.color)
+              ) {
+                const newStock = Math.max(0, (variant.stock || 0) - quantity);
+                variant.stock = newStock;
+                variantUpdated = true;
+                console.log(`✅ Stock variant mis à jour: ${variant.size}/${variant.color} → ${newStock}`);
+                break;
+              }
+            }
+            
+            if (variantUpdated) {
+              // Mettre à jour le JSON variants dans la base
+              await client.query(
+                `UPDATE ${table} SET variants = $1 WHERE id = $2`,
+                [JSON.stringify(variants), productId]
+              );
+              
+              results.success.push({
+                product_id: productId,
+                product_name: product.name,
+                table: table,
+                variant: `${variantInfo.size}/${variantInfo.color}`,
+                quantity_reduced: quantity,
+                message: `Stock variant mis à jour avec succès`
+              });
+              results.summary.updated++;
+            } else {
+              console.warn(`⚠️ Variant non trouvé pour ${product.name}: ${variantInfo.size}/${variantInfo.color}`);
+              results.errors.push({
+                product_id: productId,
+                error: `Variant ${variantInfo.size}/${variantInfo.color} non trouvé`
+              });
+              results.summary.failed++;
+            }
+          } else {
+            console.warn(`⚠️ Produit ${product.name} n'a pas de variants configurés`);
+            results.errors.push({
+              product_id: productId,
+              error: `Produit sans système de variants`
+            });
+            results.summary.failed++;
+          }
+          
+        } catch (itemError) {
+          console.error(`❌ Erreur traitement item ${item.product_id}:`, itemError);
+          results.errors.push({
+            product_id: item.product_id,
+            error: itemError.message
+          });
+          results.summary.failed++;
+        }
+      }
+      
+      await client.query('COMMIT');
+      console.log(`✅ Mise à jour stock terminée:`, results.summary);
+      
+      res.json({
+        success: true,
+        message: `Stock mis à jour: ${results.summary.updated} succès, ${results.summary.failed} échecs`,
+        summary: results.summary,
+        details: results
+      });
+      
+    } catch (error) {
+      await client.query('ROLLBACK');
+      console.error('❌ Erreur mise à jour stock:', error);
+      next(error);
+    } finally {
+      client.release();
+    }
+  }
+)
+
 // À la fin du fichier, après toutes les routes
 router.use((err, req, res, next) => {
   console.error(err)
