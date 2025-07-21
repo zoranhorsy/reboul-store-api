@@ -19,9 +19,7 @@ const archivesDir = path.join(publicDir, 'archives');
 const stripeWebhook = require('./routes/stripewebhooks');
 app.use('/api/webhooks', stripeWebhook);
 
-// Route pour les Stripe Payment Links
-const stripeLinksRouter = require('./routes/stripe-links');
-app.use('/api/stripe-links', stripeLinksRouter);
+
 
 // Créer les dossiers s'ils n'existent pas
 [publicDir, uploadsDir, brandsDir, archivesDir].forEach(dir => {
