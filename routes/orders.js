@@ -768,5 +768,107 @@ router.post('/:id/send-tracking-email',
         }
     });
 
+// POST pour envoyer un email de notification de commande (route protégée, admin seulement)  
+router.post('/send-email',
+    authMiddleware,
+    [
+        body('order_id').notEmpty().withMessage('order_id est requis'),
+        body('order_number').notEmpty().withMessage('order_number est requis'),
+        body('customer_email').isEmail().withMessage('customer_email doit être un email valide'),
+        body('customer_name').optional().isString(),
+        body('total_amount').isFloat({ min: 0 }).withMessage('total_amount doit être un nombre positif'),
+        body('items').isArray().withMessage('items doit être un tableau'),
+        body('type').isIn(['pending', 'confirmed', 'cancelled']).withMessage('type doit être pending, confirmed ou cancelled')
+    ],
+    validate([
+        body('order_id'), 
+        body('order_number'), 
+        body('customer_email'), 
+        body('total_amount'), 
+        body('items'), 
+        body('type')
+    ]),
+    async (req, res, next) => {
+        if (!req.user.isAdmin) {
+            return next(new AppError('Accès non autorisé', 403));
+        }
+        
+        const { 
+            order_id, 
+            order_number, 
+            customer_email, 
+            customer_name, 
+            total_amount, 
+            items, 
+            type 
+        } = req.body;
+        
+        try {
+            console.log(`📧 Envoi d'email ${type} pour la commande #${order_id} à ${customer_email}`);
+            
+            // Préparer les données de la commande pour l'email
+            const orderData = {
+                id: parseInt(order_id),
+                order_number,
+                total_amount: parseFloat(total_amount),
+                shipping_info: {
+                    email: customer_email,
+                    firstName: customer_name || 'Client'
+                },
+                items: items || []
+            };
+            
+            // Envoyer l'email selon le type
+            const { sendOrderStatusNotification } = require('../config/mailer');
+            
+            let emailSent = false;
+            let emailType = '';
+            
+            switch(type) {
+                case 'confirmed':
+                    // Email de confirmation de commande
+                    await sendOrderStatusNotification(orderData, 'pending', 'confirmed');
+                    emailType = 'confirmation';
+                    emailSent = true;
+                    break;
+                    
+                case 'pending':
+                    // Email de commande en attente  
+                    await sendOrderStatusNotification(orderData, null, 'pending');
+                    emailType = 'attente';
+                    emailSent = true;
+                    break;
+                    
+                case 'cancelled':
+                    // Email d'annulation de commande
+                    await sendOrderStatusNotification(orderData, 'pending', 'cancelled');
+                    emailType = 'annulation';
+                    emailSent = true;
+                    break;
+                    
+                default:
+                    throw new Error(`Type d'email non supporté: ${type}`);
+            }
+            
+            if (emailSent) {
+                console.log(`✅ Email de ${emailType} envoyé avec succès pour la commande ${order_number}`);
+                
+                res.json({
+                    success: true,
+                    message: `Email de ${emailType} envoyé avec succès`,
+                    order_number,
+                    customer_email,
+                    type
+                });
+            } else {
+                throw new Error('Erreur lors de l\'envoi de l\'email');
+            }
+            
+        } catch (error) {
+            console.error(`❌ Erreur lors de l'envoi de l'email ${type}:`, error);
+            next(new AppError(`Erreur lors de l'envoi de l'email de ${type}`, 500));
+        }
+    });
+
 module.exports = router;
 
