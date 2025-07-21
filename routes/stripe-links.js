@@ -172,7 +172,7 @@ router.post('/get-payment-intent', async (req, res) => {
  */
 router.post('/capture-payment', async (req, res) => {
   try {
-    const { payment_intent_id, order_id } = req.body;
+    const { payment_intent_id } = req.body;
     
     if (!payment_intent_id) {
       return res.status(400).json({ 
@@ -181,7 +181,7 @@ router.post('/capture-payment', async (req, res) => {
       });
     }
 
-    console.log(`💳 Capture du paiement: ${payment_intent_id} pour commande: ${order_id}`);
+    console.log(`💳 Capture du paiement: ${payment_intent_id}`);
 
     // Capturer le PaymentIntent
     const paymentIntent = await stripe.paymentIntents.capture(payment_intent_id);
@@ -195,48 +195,6 @@ router.post('/capture-payment', async (req, res) => {
 
     console.log(`✅ Paiement capturé avec succès: ${paymentIntent.id}, statut: ${paymentIntent.status}`);
 
-    let transferResult = null;
-
-    // Si order_id fourni, vérifier s'il y a des produits The Corner à transférer
-    if (order_id) {
-      console.log(`🔍 Vérification transferts The Corner pour commande: ${order_id}`);
-      
-      // Récupérer les items The Corner de cette commande
-      const cornerItemsQuery = `
-        SELECT corner_product_id, quantity, price 
-        FROM order_items 
-        WHERE order_id = $1 AND is_corner_product = true AND corner_product_id IS NOT NULL
-      `;
-      const cornerItemsResult = await db.query(cornerItemsQuery, [order_id]);
-
-      if (cornerItemsResult.rows.length > 0) {
-        // Calculer le montant total The Corner en centimes
-        const cornerTotalAmount = cornerItemsResult.rows.reduce((total, item) => {
-          return total + (parseFloat(item.price) * parseInt(item.quantity) * 100);
-        }, 0);
-
-        console.log(`💰 Montant The Corner à transférer: ${cornerTotalAmount / 100}€`);
-
-        if (cornerTotalAmount > 0) {
-          // Créer le transfert vers The Corner
-          const transfer = await stripe.transfers.create({
-            amount: cornerTotalAmount,
-            currency: 'eur',
-            destination: 'acct_1RlnwI2QtSgjqCiP', // Account ID The Corner
-            source_transaction: paymentIntent.charges.data[0].id,
-          });
-
-          transferResult = {
-            id: transfer.id,
-            amount: transfer.amount,
-            destination: transfer.destination
-          };
-
-          console.log(`✅ Transfert The Corner créé: ${transfer.id} - ${cornerTotalAmount / 100}€`);
-        }
-      }
-    }
-
     res.json({
       success: true,
       payment_intent: {
@@ -245,8 +203,7 @@ router.post('/capture-payment', async (req, res) => {
         amount_received: paymentIntent.amount_received,
         charges: paymentIntent.charges
       },
-      transfer: transferResult,
-      message: `Paiement capturé avec succès${transferResult ? ' et transfert The Corner effectué' : ''}`
+      message: 'Paiement capturé avec succès'
     });
     
   } catch (error) {
