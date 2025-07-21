@@ -814,16 +814,45 @@ async function handleCheckoutCompleted(event) {
             
             console.log(`✅ Produit ${productId} trouvé dans ${storeTable}: ${product.name}, prix: ${product.price}`);
             
-            console.log(`Insertion produit dans order_items: ID=${productId}, Nom=${product.name}, Quantité=${item.quantity}, Variant=`, variantInfo);
+            console.log(`Insertion produit dans order_items: ID=${productId}, Store=${storeTable}, Nom=${product.name}, Quantité=${item.quantity}, Variant=`, variantInfo);
             
-            const orderItemResult = await client.query(
-              `INSERT INTO order_items 
-              (order_id, product_id, product_name, quantity, price, variant_info) 
-              VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-              [newOrder.id, productId, product.name, item.quantity, product.price, variantInfo]
-            );
+            // Insertion avec les bonnes colonnes selon le store
+            let insertQuery, insertParams;
             
-            console.log(`✅ Article ajouté à la commande, ID: ${orderItemResult.rows[0].id}`);
+            switch(storeTable) {
+              case 'corner_products':
+                insertQuery = `INSERT INTO order_items 
+                  (order_id, corner_product_id, is_corner_product, product_name, quantity, price, variant_info) 
+                  VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`;
+                insertParams = [newOrder.id, productId, true, product.name, item.quantity, product.price, variantInfo];
+                break;
+                
+              case 'sneakers_products':
+                insertQuery = `INSERT INTO order_items 
+                  (order_id, sneakers_product_id, is_sneakers_product, product_name, quantity, price, variant_info) 
+                  VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`;
+                insertParams = [newOrder.id, productId, true, product.name, item.quantity, product.price, variantInfo];
+                break;
+                
+              case 'minots_products':
+                insertQuery = `INSERT INTO order_items 
+                  (order_id, minots_product_id, is_minots_product, product_name, quantity, price, variant_info) 
+                  VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`;
+                insertParams = [newOrder.id, productId, true, product.name, item.quantity, product.price, variantInfo];
+                break;
+                
+              case 'products':
+              default:
+                insertQuery = `INSERT INTO order_items 
+                  (order_id, product_id, product_name, quantity, price, variant_info) 
+                  VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`;
+                insertParams = [newOrder.id, productId, product.name, item.quantity, product.price, variantInfo];
+                break;
+            }
+            
+            const orderItemResult = await client.query(insertQuery, insertParams);
+            
+            console.log(`✅ Article ajouté à la commande (${storeTable}), ID: ${orderItemResult.rows[0].id}`);
             
           } catch (itemError) {
             console.error(`❌ ERREUR lors du traitement de l'item ${JSON.stringify(item)}:`, itemError);
