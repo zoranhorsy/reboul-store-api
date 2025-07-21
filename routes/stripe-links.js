@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const db = require('../db');
+const authMiddleware = require('../middleware/auth');
 
 /**
  * Endpoint pour créer un lien de paiement dynamiquement
@@ -98,6 +99,184 @@ router.get('/payment-links', async (req, res) => {
   } catch (error) {
     console.error('Erreur récupération des payment links:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Récupérer le PaymentIntent depuis une session Stripe
+ */
+router.post('/get-payment-intent', authMiddleware, async (req, res) => {
+  try {
+    const { session_id } = req.body;
+    
+    if (!session_id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'session_id est requis' 
+      });
+    }
+
+    console.log(`🔍 Récupération du PaymentIntent pour la session: ${session_id}`);
+
+    // Récupérer la session Stripe
+    const session = await stripe.checkout.sessions.retrieve(session_id, {
+      expand: ['payment_intent']
+    });
+
+    if (!session) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'Session Stripe non trouvée' 
+      });
+    }
+
+    // Vérifier que la session a un payment_intent
+    if (!session.payment_intent) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Aucun PaymentIntent associé à cette session' 
+      });
+    }
+
+    console.log(`✅ PaymentIntent trouvé: ${session.payment_intent.id}`);
+
+    // Retourner le PaymentIntent au format attendu par AdminOrders
+    res.json({
+      success: true,
+      payment_intent: {
+        id: session.payment_intent.id,
+        status: session.payment_intent.status,
+        amount: session.payment_intent.amount,
+        currency: session.payment_intent.currency,
+        capture_method: session.payment_intent.capture_method,
+        charges: session.payment_intent.charges
+      },
+      session: {
+        id: session.id,
+        status: session.status,
+        payment_status: session.payment_status
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Erreur récupération PaymentIntent:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+/**
+ * Capturer un paiement Stripe (admin seulement)
+ */
+router.post('/capture-payment', authMiddleware, async (req, res) => {
+  try {
+    const { payment_intent_id } = req.body;
+    
+    if (!payment_intent_id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'payment_intent_id est requis' 
+      });
+    }
+
+    console.log(`💳 Capture du paiement: ${payment_intent_id}`);
+
+    // Capturer le PaymentIntent
+    const paymentIntent = await stripe.paymentIntents.capture(payment_intent_id);
+
+    if (!paymentIntent) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'PaymentIntent non trouvé' 
+      });
+    }
+
+    console.log(`✅ Paiement capturé avec succès: ${paymentIntent.id}, statut: ${paymentIntent.status}`);
+
+    res.json({
+      success: true,
+      payment_intent: {
+        id: paymentIntent.id,
+        status: paymentIntent.status,
+        amount_received: paymentIntent.amount_received,
+        charges: paymentIntent.charges
+      },
+      message: 'Paiement capturé avec succès'
+    });
+    
+  } catch (error) {
+    console.error('❌ Erreur capture paiement:', error);
+    
+    // Gérer les erreurs spécifiques Stripe
+    if (error.type === 'StripeInvalidRequestError') {
+      return res.status(400).json({ 
+        success: false, 
+        error: error.message 
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
+});
+
+/**
+ * Annuler un paiement Stripe (admin seulement)
+ */
+router.post('/cancel-payment', authMiddleware, async (req, res) => {
+  try {
+    const { payment_intent_id } = req.body;
+    
+    if (!payment_intent_id) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'payment_intent_id est requis' 
+      });
+    }
+
+    console.log(`❌ Annulation du paiement: ${payment_intent_id}`);
+
+    // Annuler le PaymentIntent
+    const paymentIntent = await stripe.paymentIntents.cancel(payment_intent_id);
+
+    if (!paymentIntent) {
+      return res.status(404).json({ 
+        success: false, 
+        error: 'PaymentIntent non trouvé' 
+      });
+    }
+
+    console.log(`✅ Paiement annulé avec succès: ${paymentIntent.id}, statut: ${paymentIntent.status}`);
+
+    res.json({
+      success: true,
+      payment_intent: {
+        id: paymentIntent.id,
+        status: paymentIntent.status,
+        cancellation_reason: paymentIntent.cancellation_reason
+      },
+      message: 'Paiement annulé avec succès'
+    });
+    
+  } catch (error) {
+    console.error('❌ Erreur annulation paiement:', error);
+    
+    // Gérer les erreurs spécifiques Stripe
+    if (error.type === 'StripeInvalidRequestError') {
+      return res.status(400).json({ 
+        success: false, 
+        error: error.message 
+      });
+    }
+    
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
   }
 });
 
