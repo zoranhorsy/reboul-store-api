@@ -58,8 +58,34 @@ router.get('/:id',
             if (!req.user.isAdmin && req.user.id !== rows[0].user_id) {
                 return next(new AppError('Accès non autorisé', 403));
             }
-            const orderItems = await pool.query('SELECT * FROM order_items WHERE order_id = $1', [req.params.id]);
-            res.json({ ...rows[0], items: orderItems.rows });
+            const orderItems = await pool.query(`
+                SELECT *, 
+                CASE 
+                    WHEN product_id IS NOT NULL THEN product_id
+                    WHEN corner_product_id IS NOT NULL THEN corner_product_id  
+                    WHEN sneakers_product_id IS NOT NULL THEN sneakers_product_id
+                    WHEN minots_product_id IS NOT NULL THEN minots_product_id
+                    ELSE NULL
+                END as real_product_id,
+                CASE 
+                    WHEN product_id IS NOT NULL THEN 'products'
+                    WHEN corner_product_id IS NOT NULL THEN 'corner_products'  
+                    WHEN sneakers_product_id IS NOT NULL THEN 'sneakers_products'
+                    WHEN minots_product_id IS NOT NULL THEN 'minots_products'
+                    ELSE NULL
+                END as product_table
+                FROM order_items 
+                WHERE order_id = $1
+            `, [req.params.id]);
+            
+            // Ajouter real_product_id et table info pour le frontend
+            const itemsWithCorrectIds = orderItems.rows.map(item => ({
+                ...item,
+                product_id: item.real_product_id || item.product_id,
+                store_table: item.product_table
+            }));
+            
+            res.json({ ...rows[0], items: itemsWithCorrectIds });
         } catch (err) {
             next(new AppError('Erreur lors de la récupération de la commande', 500));
         }

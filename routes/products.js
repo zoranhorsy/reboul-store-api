@@ -209,59 +209,79 @@ router.post(
           const quantity = parseInt(item.quantity);
           const variantInfo = item.variant_info || {};
           
-          console.log(`🔍 Traitement produit ID: ${productId}, quantité: ${quantity}`);
+          console.log(`🔍 Traitement produit ID: ${productId}, quantité: ${quantity}, table: ${item.store_table}`);
           
-          // Déterminer dans quelle table chercher le produit
-          let table = null;
+          // Utiliser la table spécifiée ou fallback vers recherche multiple
+          let table = item.store_table || null;
           let product = null;
           
-          // 1. Chercher dans corner_products
-          try {
-            const cornerResult = await client.query('SELECT * FROM corner_products WHERE id = $1', [productId]);
-            if (cornerResult.rows.length > 0) {
-              table = 'corner_products';
-              product = cornerResult.rows[0];
-            }
-          } catch (e) {
-            console.warn(`Erreur recherche corner_products:`, e.message);
-          }
-          
-          // 2. Chercher dans sneakers_products
-          if (!product) {
+          if (table && ['corner_products', 'sneakers_products', 'minots_products', 'products'].includes(table)) {
+            // Chercher directement dans la table spécifiée
             try {
-              const sneakersResult = await client.query('SELECT * FROM sneakers_products WHERE id = $1', [productId]);
-              if (sneakersResult.rows.length > 0) {
-                table = 'sneakers_products';
-                product = sneakersResult.rows[0];
+              const result = await client.query(`SELECT * FROM ${table} WHERE id = $1`, [productId]);
+              if (result.rows.length > 0) {
+                product = result.rows[0];
+                console.log(`✅ Produit trouvé dans ${table} (ciblé): ${product.name}`);
+              } else {
+                console.warn(`⚠️ Produit ${productId} non trouvé dans la table ciblée ${table}`);
               }
             } catch (e) {
-              console.warn(`Erreur recherche sneakers_products:`, e.message);
+              console.error(`❌ Erreur recherche dans ${table}:`, e.message);
             }
           }
           
-          // 3. Chercher dans minots_products
+          // Si pas de table spécifiée ou pas trouvé, fallback vers recherche multiple
           if (!product) {
+            console.log(`🔄 Recherche fallback dans toutes les tables pour ID: ${productId}`);
+            
+            // 1. Chercher dans corner_products
             try {
-              const minotsResult = await client.query('SELECT * FROM minots_products WHERE id = $1', [productId]);
-              if (minotsResult.rows.length > 0) {
-                table = 'minots_products';
-                product = minotsResult.rows[0];
+              const cornerResult = await client.query('SELECT * FROM corner_products WHERE id = $1', [productId]);
+              if (cornerResult.rows.length > 0) {
+                table = 'corner_products';
+                product = cornerResult.rows[0];
               }
             } catch (e) {
-              console.warn(`Erreur recherche minots_products:`, e.message);
+              console.warn(`Erreur recherche corner_products:`, e.message);
             }
-          }
-          
-          // 4. Chercher dans products (adult)
-          if (!product) {
-            try {
-              const productsResult = await client.query('SELECT * FROM products WHERE id = $1', [productId]);
-              if (productsResult.rows.length > 0) {
-                table = 'products';
-                product = productsResult.rows[0];
+            
+            // 2. Chercher dans sneakers_products
+            if (!product) {
+              try {
+                const sneakersResult = await client.query('SELECT * FROM sneakers_products WHERE id = $1', [productId]);
+                if (sneakersResult.rows.length > 0) {
+                  table = 'sneakers_products';
+                  product = sneakersResult.rows[0];
+                }
+              } catch (e) {
+                console.warn(`Erreur recherche sneakers_products:`, e.message);
               }
-            } catch (e) {
-              console.warn(`Erreur recherche products:`, e.message);
+            }
+            
+            // 3. Chercher dans minots_products
+            if (!product) {
+              try {
+                const minotsResult = await client.query('SELECT * FROM minots_products WHERE id = $1', [productId]);
+                if (minotsResult.rows.length > 0) {
+                  table = 'minots_products';
+                  product = minotsResult.rows[0];
+                }
+              } catch (e) {
+                console.warn(`Erreur recherche minots_products:`, e.message);
+              }
+            }
+            
+            // 4. Chercher dans products (adult)
+            if (!product) {
+              try {
+                const productsResult = await client.query('SELECT * FROM products WHERE id = $1', [productId]);
+                if (productsResult.rows.length > 0) {
+                  table = 'products';
+                  product = productsResult.rows[0];
+                }
+              } catch (e) {
+                console.warn(`Erreur recherche products:`, e.message);
+              }
             }
           }
           
@@ -274,8 +294,6 @@ router.post(
             results.summary.failed++;
             continue;
           }
-          
-          console.log(`✅ Produit trouvé dans ${table}: ${product.name}`);
           
           // Mettre à jour les variants si le produit en a
           if (product.variants && typeof product.variants === 'object') {
