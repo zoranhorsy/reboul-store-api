@@ -120,7 +120,8 @@ router.get('/',
             'return_status', oi.return_status,
             'return_quantity', oi.return_quantity,
             'return_reason', oi.return_reason,
-            'admin_comment', oi.admin_comment
+            'admin_comment', oi.admin_comment,
+            'is_refunded', oi.is_refunded
           ) END
         ) FILTER (WHERE oi.id IS NOT NULL), '[]') as items
       FROM orders o
