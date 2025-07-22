@@ -1143,11 +1143,16 @@ router.patch('/:orderId/mark-refunded',
                 [refund_id || null, 'refunded', orderId]
             );
 
-            // 3. (Optionnel) Ajouter un commentaire admin sur tous les items retournés
+            // 3. (Optionnel) Ajouter un commentaire admin sur tous les items retournés et marquer comme remboursé
             if (admin_comment) {
                 await client.query(
-                    "UPDATE order_items SET admin_comment = $1 WHERE order_id = $2 AND return_status = 'approved'",
+                    "UPDATE order_items SET admin_comment = $1, is_refunded = true WHERE order_id = $2 AND return_status = 'approved'",
                     [admin_comment, orderId]
+                );
+            } else {
+                await client.query(
+                    "UPDATE order_items SET is_refunded = true WHERE order_id = $1 AND return_status = 'approved'",
+                    [orderId]
                 );
             }
 
