@@ -302,6 +302,39 @@ const sendOrderStatusNotification = async (order, previousStatus, newStatus) => 
                 details: 'Si vous avez des questions concernant cette annulation, n\'hésitez pas à nous contacter. Nous restons à votre disposition.',
                 icon: '❌',
                 color: '#F44336'
+            },
+            // --- TEMPLATES RETOUR ---
+            return_requested: {
+                subject: `Demande de retour reçue – Reboul` ,
+                title: '📦 Demande de retour enregistrée',
+                message: 'La maison Reboul vous remercie pour votre confiance. Nous avons bien reçu votre demande de retour.',
+                details: 'Notre équipe va traiter votre demande dans les plus brefs délais. Vous recevrez un email dès que votre retour sera validé ou refusé.',
+                icon: '📦',
+                color: '#2196F3'
+            },
+            return_approved: {
+                subject: `Retour validé – Reboul`,
+                title: '✅ Retour validé',
+                message: 'La maison Reboul vous informe que votre demande de retour a été validée.',
+                details: 'Vous pouvez procéder à l’envoi du produit à l’adresse indiquée sur notre site. Dès réception et contrôle du produit, nous procéderons à votre remboursement.',
+                icon: '✅',
+                color: '#4CAF50'
+            },
+            return_rejected: {
+                subject: `Retour refusé – Reboul`,
+                title: '❌ Retour refusé',
+                message: 'La maison Reboul vous informe que votre demande de retour a été refusée.',
+                details: order.admin_comment ? `Motif : ${order.admin_comment}` : 'Pour toute question, notre service client reste à votre disposition.',
+                icon: '❌',
+                color: '#F44336'
+            },
+            refunded: {
+                subject: `Remboursement effectué – Reboul`,
+                title: '💸 Remboursement effectué',
+                message: 'La maison Reboul vous informe que votre remboursement a bien été effectué.',
+                details: 'Le montant sera crédité sur votre moyen de paiement dans les prochains jours. Merci pour votre confiance.',
+                icon: '💸',
+                color: '#009688'
             }
         };
 

@@ -991,7 +991,7 @@ router.patch('/:orderId/return',
 
             await client.query('COMMIT');
 
-            // 4. Envoyer un email de notification (optionnel)
+            // 4. Envoyer un email de notification (confirmation demande de retour)
             try {
                 await sendOrderStatusNotification(order, order.status, 'return_requested');
             } catch (emailErr) {
