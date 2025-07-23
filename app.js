@@ -65,6 +65,8 @@ app.use('/api/reviews', reviewsRoutes);
 app.use('/api/addresses', addressesRoutes);
 app.use('/api/corner-products', cornerProductsRoutes);
 app.use('/api/corner-product-variants', cornerProductVariantsRoutes);
+app.use("/api/sneakers-products", require("./routes/sneakersProducts"));
+app.use("/api/minots-products", require("./routes/minotsProducts"));
 
 // Error handling
 app.use(errorHandler);
