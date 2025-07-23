@@ -183,6 +183,8 @@ app.get('/api', (req, res) => {
 
 // Importer et utiliser les routes
 app.use('/api/products', require('./routes/products'));
+app.use('/api/sneakers-products', require('./routes/sneakersProducts'));
+app.use('/api/minots-products', require('./routes/minotsProducts'));
 
 // Routes
 const categoriesRouter = require('./routes/categories');
