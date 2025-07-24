@@ -559,9 +559,36 @@ const sendTrackingNotification = async (order, trackingNumber, carrier = null) =
     }
 };
 
+/**
+ * Envoie un message de contact à l'adresse support
+ * @param {Object} param0
+ * @param {string} param0.name
+ * @param {string} param0.email
+ * @param {string} param0.message
+ * @returns {Promise<Object>} Résultat de l'envoi
+ */
+const sendContactMessage = async ({ name, email, message }) => {
+    if (process.env.NODE_ENV === 'test') {
+        return { messageId: 'test-message-id' };
+    }
+    if (!name || !email || !message) {
+        throw new Error('Champs manquants');
+    }
+    const mailOptions = {
+        from: `Contact Reboul <${process.env.SMTP_USER}>`,
+        to: 'horsydevservices@gmail.com',
+        subject: `Nouveau message de contact de ${name}`,
+        text: `Nom: ${name}\nEmail: ${email}\n\nMessage:\n${message}`,
+        replyTo: email,
+    };
+    const info = await transporter.sendMail(mailOptions);
+    return info;
+};
+
 module.exports = {
     sendOrderConfirmation,
     sendStripePaymentConfirmation,
     sendOrderStatusNotification,
-    sendTrackingNotification
+    sendTrackingNotification,
+    sendContactMessage
 }; 
