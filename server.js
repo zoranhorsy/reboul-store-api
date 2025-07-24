@@ -219,6 +219,7 @@ app.use('/api/stats', statsRouter);
 app.use('/api/reboul', reboulStatsRouter);
 app.use('/api/archives', archivesRouter);
 app.use('/api/checkout', checkoutRouter);
+app.use('/api/contact', contactRouter);
 
 // Endpoint spécial pour les statistiques des collections par store_type
 app.get('/collections/stats', async (req, res) => {
