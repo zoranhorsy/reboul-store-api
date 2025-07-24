@@ -201,6 +201,7 @@ const statsRouter = require('./routes/stats');
 const reboulStatsRouter = require('./routes/reboulStats');
 const archivesRouter = require('./routes/archives');
 const checkoutRouter = require('./routes/checkout');
+const contactRouter = require('./routes/contact');
 
 // Enregistrement des routes avec le préfixe /api
 app.use('/api/categories', categoriesRouter);
