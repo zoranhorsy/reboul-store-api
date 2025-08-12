@@ -34,6 +34,8 @@ const corsOptions = {
     origin: [
         'https://reboulreactversion0.vercel.app',
         'https://reboul-store.vercel.app',
+        'https://reboulstore.com',
+        'https://www.reboulstore.com',
         'http://localhost:3000'
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH', 'HEAD'],
