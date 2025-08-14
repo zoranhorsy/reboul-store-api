@@ -24,7 +24,15 @@ const app = express();
 
 // Configuration CORS
 app.use(cors({
-    origin: ['http://localhost:3000', 'https://reboul-store-api-production.up.railway.app'], // Autoriser les deux domaines
+    origin: [
+        'http://localhost:3000', 
+        'https://reboul-store-api-production.up.railway.app',
+        'https://reboul-store.vercel.app',
+        'https://reboul-store-git-main-zoranhorsy.vercel.app',
+        'https://reboul-store-zoranhorsy.vercel.app',
+        'https://reboulstore.com',
+        'https://www.reboulstore.com'
+    ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept']
