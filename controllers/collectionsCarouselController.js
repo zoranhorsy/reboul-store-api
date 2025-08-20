@@ -5,9 +5,16 @@ const { AppError } = require('../middleware/errorHandler');
 exports.getAllCollections = async (req, res) => {
     try {
         const result = await db.pool.query(`
-            SELECT * FROM collections_carousel 
-            WHERE is_active = true 
-            ORDER BY sort_order ASC, created_at ASC
+            SELECT 
+                cc.*,
+                b.name as brand_name,
+                COALESCE(
+                    (SELECT COUNT(*) FROM products p WHERE p.brand_id = cc.brand_id AND p.active = true), 0
+                ) as product_count
+            FROM collections_carousel cc
+            LEFT JOIN brands b ON cc.brand_id = b.id
+            WHERE cc.is_active = true 
+            ORDER BY cc.sort_order ASC, cc.created_at ASC
         `);
         res.status(200).json(result.rows);
     } catch (error) {
