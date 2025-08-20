@@ -18,9 +18,12 @@ CREATE TABLE IF NOT EXISTS collections_carousel (
 CREATE INDEX idx_collections_carousel_active ON collections_carousel(is_active);
 CREATE INDEX idx_collections_carousel_sort ON collections_carousel(sort_order);
 
--- Données de test initiales
-INSERT INTO collections_carousel (name, description, image_url, link_url, badge, sort_order) VALUES
-('Collection CP Company', 'Design italien - Les essentiels CP Company', '/images/collections/cp-company.jpg', '/catalogue?brand=cp-company', 'Tendance', 1),
-('Collection Sneakers', 'Les dernières nouveautés en sneakers', '/images/collections/sneakers-collection.jpg', '/catalogue?category=sneakers', 'Nouveau', 2),
-('Collection Adultes', 'Élégance contemporaine pour adultes', '/images/collections/adult-collection.jpg', '/catalogue?category=adult', 'Populaire', 3),
-('Collection Kids', 'Style et confort pour les plus jeunes', '/images/collections/kids-collection.jpg', '/catalogue?category=kids', 'Exclusif', 4);
+-- Données de test initiales (seulement si la table est vide)
+INSERT INTO collections_carousel (name, description, image_url, link_url, badge, sort_order) 
+SELECT * FROM (VALUES
+    ('Collection CP Company', 'Design italien - Les essentiels CP Company', '/images/collections/cp-company.jpg', '/catalogue?brand=cp-company', 'Tendance', 1),
+    ('Collection Sneakers', 'Les dernières nouveautés en sneakers', '/images/collections/sneakers-collection.jpg', '/catalogue?category=sneakers', 'Nouveau', 2),
+    ('Collection Adultes', 'Élégance contemporaine pour adultes', '/images/collections/adult-collection.jpg', '/catalogue?category=adult', 'Populaire', 3),
+    ('Collection Kids', 'Style et confort pour les plus jeunes', '/images/collections/kids-collection.jpg', '/catalogue?category=kids', 'Exclusif', 4)
+) AS v(name, description, image_url, link_url, badge, sort_order)
+WHERE NOT EXISTS (SELECT 1 FROM collections_carousel);
