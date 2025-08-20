@@ -8,17 +8,33 @@ exports.getAllCollections = async (req, res) => {
             SELECT 
                 cc.*,
                 b.name as brand_name,
-                COALESCE(
-                    (SELECT COUNT(*) FROM products p WHERE p.brand_id = cc.brand_id AND p.active = true), 0
-                ) + COALESCE(
-                    (SELECT COUNT(*) FROM sneakers_products sp WHERE sp.brand_id = cc.brand_id AND sp.active = true), 0
-                ) + COALESCE(
-                    (SELECT COUNT(*) FROM minots_products mp WHERE mp.brand_id = cc.brand_id AND mp.active = true), 0
-                ) + COALESCE(
-                    (SELECT COUNT(*) FROM corner_products cp WHERE cp.brand_id = cc.brand_id AND cp.active = true), 0
-                ) as product_count
+                COALESCE(p_count.count, 0) + COALESCE(sp_count.count, 0) + COALESCE(mp_count.count, 0) + COALESCE(cp_count.count, 0) as product_count
             FROM collections_carousel cc
             LEFT JOIN brands b ON cc.brand_id = b.id
+            LEFT JOIN (
+                SELECT brand_id, COUNT(*) as count 
+                FROM products 
+                WHERE active = true 
+                GROUP BY brand_id
+            ) p_count ON cc.brand_id = p_count.brand_id
+            LEFT JOIN (
+                SELECT brand_id, COUNT(*) as count 
+                FROM sneakers_products 
+                WHERE active = true 
+                GROUP BY brand_id
+            ) sp_count ON cc.brand_id = sp_count.brand_id
+            LEFT JOIN (
+                SELECT brand_id, COUNT(*) as count 
+                FROM minots_products 
+                WHERE active = true 
+                GROUP BY brand_id
+            ) mp_count ON cc.brand_id = mp_count.brand_id
+            LEFT JOIN (
+                SELECT brand_id, COUNT(*) as count 
+                FROM corner_products 
+                WHERE active = true 
+                GROUP BY brand_id
+            ) cp_count ON cc.brand_id = cp_count.brand_id
             WHERE cc.is_active = true 
             ORDER BY cc.sort_order ASC, cc.created_at ASC
         `);
