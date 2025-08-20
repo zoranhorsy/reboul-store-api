@@ -3,18 +3,49 @@ const pool = require('../config/database');
 // Récupérer toutes les collections actives du carousel
 const getCollectionsCarousel = async (req, res) => {
   try {
-    const query = `
-      SELECT id, name, description, image_url, link_url, badge, sort_order
-      FROM collections_carousel 
-      WHERE is_active = true 
-      ORDER BY sort_order ASC, created_at DESC
-    `;
-    
-    const result = await pool.query(query);
+    // Données de test temporaires
+    const testData = [
+      {
+        id: 1,
+        name: "Collection CP Company",
+        description: "Design italien - Les essentiels CP Company",
+        image_url: "/images/collections/cp-company.jpg",
+        link_url: "/catalogue?brand=cp-company",
+        badge: "Tendance",
+        sort_order: 1
+      },
+      {
+        id: 2,
+        name: "Collection Sneakers",
+        description: "Les dernières nouveautés en sneakers",
+        image_url: "/images/collections/sneakers-collection.jpg",
+        link_url: "/catalogue?category=sneakers",
+        badge: "Nouveau",
+        sort_order: 2
+      },
+      {
+        id: 3,
+        name: "Collection Adultes",
+        description: "Élégance contemporaine pour adultes",
+        image_url: "/images/collections/adult-collection.jpg",
+        link_url: "/catalogue?category=adult",
+        badge: "Populaire",
+        sort_order: 3
+      },
+      {
+        id: 4,
+        name: "Collection Kids",
+        description: "Style et confort pour les plus jeunes",
+        image_url: "/images/collections/kids-collection.jpg",
+        link_url: "/catalogue?category=kids",
+        badge: "Exclusif",
+        sort_order: 4
+      }
+    ];
     
     res.json({
       success: true,
-      data: result.rows
+      data: testData
     });
   } catch (error) {
     console.error('Erreur lors de la récupération des collections carousel:', error);
