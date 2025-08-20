@@ -1,4 +1,4 @@
-const pool = require('../config/database');
+// const pool = require('../config/database');
 
 // Récupérer toutes les collections actives du carousel
 const getCollectionsCarousel = async (req, res) => {
