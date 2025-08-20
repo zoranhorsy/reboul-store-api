@@ -21,6 +21,7 @@ const collectionsCarouselRoutes = require('./routes/collectionsCarousel');
 const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
 
+
 const app = express();
 
 // Configuration CORS
