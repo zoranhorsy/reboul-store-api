@@ -1,23 +1,22 @@
 const express = require('express');
 const router = express.Router();
-const {
-  getCollectionsCarousel,
-  getCollectionById,
-  createCollection,
-  updateCollection,
-  deleteCollection,
-  reorderCollections
-} = require('../controllers/collectionsCarouselController');
-const { authenticateToken, isAdmin } = require('../middleware/auth');
 
-// Routes publiques
-router.get('/', getCollectionsCarousel);
-router.get('/:id', getCollectionById);
-
-// Routes protégées (admin seulement)
-router.post('/', authenticateToken, isAdmin, createCollection);
-router.put('/:id', authenticateToken, isAdmin, updateCollection);
-router.delete('/:id', authenticateToken, isAdmin, deleteCollection);
-router.put('/reorder/collections', authenticateToken, isAdmin, reorderCollections);
+// Test simple
+router.get('/', (req, res) => {
+  res.json({
+    success: true,
+    data: [
+      {
+        id: 1,
+        name: "Test Collection",
+        description: "Test",
+        image_url: "/test.jpg",
+        link_url: "/test",
+        badge: "Test",
+        sort_order: 1
+      }
+    ]
+  });
+});
 
 module.exports = router;
