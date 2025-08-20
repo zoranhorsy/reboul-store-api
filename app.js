@@ -76,6 +76,25 @@ app.use('/api/addresses', addressesRoutes);
 app.use('/api/corner-products', cornerProductsRoutes);
 app.use('/api/corner-product-variants', cornerProductVariantsRoutes);
 app.use('/api/contact', contactRoutes);
+
+// Test direct dans app.js
+app.get('/api/collections-carousel', (req, res) => {
+  res.json({
+    success: true,
+    data: [
+      {
+        id: 1,
+        name: "Test Collection",
+        description: "Test",
+        image_url: "/test.jpg",
+        link_url: "/test",
+        badge: "Test",
+        sort_order: 1
+      }
+    ]
+  });
+});
+
 app.use('/api/collections-carousel', collectionsCarouselRoutes);
 app.use("/api/sneakers-products", require("./routes/sneakersProducts"));
 app.use("/api/minots-products", require("./routes/minotsProducts"));
