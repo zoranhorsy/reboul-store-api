@@ -10,6 +10,12 @@ exports.getAllCollections = async (req, res) => {
                 b.name as brand_name,
                 COALESCE(
                     (SELECT COUNT(*) FROM products p WHERE p.brand_id = cc.brand_id AND p.active = true), 0
+                ) + COALESCE(
+                    (SELECT COUNT(*) FROM sneakers_products sp WHERE sp.brand_id = cc.brand_id AND sp.active = true), 0
+                ) + COALESCE(
+                    (SELECT COUNT(*) FROM minots_products mp WHERE mp.brand_id = cc.brand_id AND mp.active = true), 0
+                ) + COALESCE(
+                    (SELECT COUNT(*) FROM corner_products cp WHERE cp.brand_id = cc.brand_id AND cp.active = true), 0
                 ) as product_count
             FROM collections_carousel cc
             LEFT JOIN brands b ON cc.brand_id = b.id
