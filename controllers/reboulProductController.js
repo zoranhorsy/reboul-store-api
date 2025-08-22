@@ -89,10 +89,15 @@ class ReboulProductController {
     const sortOrder = req.query.order === "desc" ? "DESC" : "ASC"
 
     // Construction de la requête selon le store_type
+    console.log('🔍 Store type demandé:', storeType);
+    console.log('🔍 Conditions communes:', commonConditions);
+    
     if (storeType === "adult") {
       // Chercher uniquement dans products (adultes)
       const conditions = [...commonConditions, "store_type = 'adult'"]
       const whereClause = conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : ""
+      console.log('🔍 Requête SQL pour adult:', query);
+      console.log('🔍 Paramètres:', queryParams);
       
       query = `
         SELECT *, store_type, 'products' as source_table 
