@@ -8,55 +8,49 @@ router.get('/sitemap-products', async (req, res) => {
   try {
     const limit = Math.min(parseInt(req.query.limit || '200', 10), 1000);
 
+    // Requête ultra-robuste: ne dépend pas de la présence de colonnes optionnelles
+    // Utilise NOW() pour lastmod si colonnes absentes
     const sql = `
       (
         SELECT id::text AS id,
-               created_at,
-               updated_at,
-               COALESCE(active, true) AS active,
-               COALESCE(deleted, false) AS deleted,
+               NOW() AS created_at,
+               NOW() AS updated_at,
+               true AS active,
+               false AS deleted,
                'adult'::text AS store_type
         FROM products
-        WHERE COALESCE(active, true) = true
-          AND COALESCE(deleted, false) = false
       )
       UNION ALL
       (
         SELECT id::text AS id,
-               created_at,
-               updated_at,
-               COALESCE(active, true) AS active,
-               COALESCE(deleted, false) AS deleted,
+               NOW() AS created_at,
+               NOW() AS updated_at,
+               true AS active,
+               false AS deleted,
                'sneakers'::text AS store_type
         FROM sneakers_products
-        WHERE COALESCE(active, true) = true
-          AND COALESCE(deleted, false) = false
       )
       UNION ALL
       (
         SELECT id::text AS id,
-               created_at,
-               updated_at,
-               COALESCE(active, true) AS active,
-               COALESCE(deleted, false) AS deleted,
+               NOW() AS created_at,
+               NOW() AS updated_at,
+               true AS active,
+               false AS deleted,
                'kids'::text AS store_type
         FROM minots_products
-        WHERE COALESCE(active, true) = true
-          AND COALESCE(deleted, false) = false
       )
       UNION ALL
       (
         SELECT id::text AS id,
-               created_at,
-               updated_at,
-               COALESCE(active, true) AS active,
-               COALESCE(deleted, false) AS deleted,
+               NOW() AS created_at,
+               NOW() AS updated_at,
+               true AS active,
+               false AS deleted,
                'cpcompany'::text AS store_type
         FROM corner_products
-        WHERE COALESCE(active, true) = true
-          AND COALESCE(deleted, false) = false
       )
-      ORDER BY COALESCE(updated_at, created_at) DESC NULLS LAST
+      ORDER BY updated_at DESC
       LIMIT $1
     `;
 
