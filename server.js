@@ -225,6 +225,8 @@ app.use('/api/archives', archivesRouter);
 app.use('/api/checkout', checkoutRouter);
 app.use('/api/contact', contactRouter);
 app.use('/api/collections-carousel', collectionsCarouselRouter);
+// Endpoint public pour le sitemap
+app.use('/api/public', require('./routes/public'));
 
 // Endpoint spécial pour les statistiques des collections par store_type
 app.get('/collections/stats', async (req, res) => {
