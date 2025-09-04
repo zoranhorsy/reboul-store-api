@@ -80,6 +80,7 @@ app.use('/api/contact', contactRoutes);
 app.use('/api/collections-carousel', collectionsCarouselRoutes);
 app.use("/api/sneakers-products", require("./routes/sneakersProducts"));
 app.use("/api/minots-products", require("./routes/minotsProducts"));
+app.use('/api/public', require('./routes/public'));
 
 // Error handling
 app.use(errorHandler);
